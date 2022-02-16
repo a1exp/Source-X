@@ -238,18 +238,18 @@ TRIGRET_TYPE CChar::OnCharTrigForLayerLoop( CScript &s, CTextConsole *pSrc, CScr
 	return TRIGRET_ENDIF;
 }
 
-int CChar::GetWeightLoadPercent( int iWeight ) const
+int CChar::GetWeightLoadPercent(int iWeight) const
 {
 	ADDTOCALLSTACK("CChar::GetWeightLoadPercent");
 	// Get a percent of load.
-	if ( IsPriv(PRIV_GM) )
+	if (IsPriv(PRIV_GM))
 		return 1;
 
 	int	MaxCarry = g_Cfg.Calc_MaxCarryWeight(this);
-	if ( !MaxCarry )
+	if (!MaxCarry)
 		return 1000;	// suppose self extra-overloaded
 
-	return (int)IMulDivLL( iWeight, 100, MaxCarry );
+	return (int)IMulDivLL(iWeight, 100, MaxCarry);
 }
 
 bool CChar::CanCarry( const CItem *pItem ) const
@@ -1387,6 +1387,16 @@ bool CChar::CanTouch( const CObjBase *pObj ) const
 				return false;
 		}
 	}
+	else if (pObjTop == this) //Top container is the player (bank or backpack)
+	{
+		// Check if the item is in my bankbox, and i'm not in the same position from which I opened it the last time.
+		const CPointMap& ptTop = GetTopPoint();
+		CItemContainer* pBank = GetChar()->GetBank();
+		bool fItemContIsInsideBankBox = pBank->IsItemInside(pObj->GetUID().ItemFind());
+		if (fItemContIsInsideBankBox && (pBank->m_itEqBankBox.m_pntOpen != ptTop))
+			return false;
+	}
+
 
 	if ( IsPriv(PRIV_GM) )
 		return true;
