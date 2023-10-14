@@ -29,7 +29,7 @@
 static bool GetDeltaStr( CPointMap & pt, tchar * pszDir )
 {
 	tchar * ppCmd[3];
-	size_t iQty = Str_ParseCmds( pszDir, ppCmd, CountOf(ppCmd));
+	size_t iQty = Str_ParseCmds( pszDir, ppCmd, ARRAY_COUNT(ppCmd));
 	if (iQty <= 0)
 		return false;
 
@@ -70,7 +70,7 @@ CObjBase::CObjBase( bool fItem )  // PROFILE_TIME_QTY is unused, CObjBase is not
 
 	m_timestamp = 0;
 	m_CanMask = 0;
-	
+
 	m_attackBase = m_attackRange = 0;
 	m_defenseBase = m_defenseRange = 0;
 	m_ModAr = 0;
@@ -92,7 +92,7 @@ CObjBase::CObjBase( bool fItem )  // PROFILE_TIME_QTY is unused, CObjBase is not
 	else
 	{
 		// Find a free UID slot for this.
-		SetUID(UID_CLEAR, fItem);
+		SetUID(UID_PLAIN_CLEAR, fItem);
 		ASSERT(IsValidUID());
 		SetUIDContainerFlags(UID_O_DISCONNECT);	// it is no place for now
 	}
@@ -118,7 +118,7 @@ CObjBase::~CObjBase()
             //pEntity->UnsubscribeComponent(pSpawn);    // Avoiding recursive calls from CCSpawn::DelObj when forcing the pChar/pItem to Delete();
             pSpawn->DelObj(GetUID());  // Then I should be removed from it's list.
         }
-    }	
+    }
 
 	// As a safety net. If we are calling those methods via the class destructor, we know that calling virtual methods won't work,
 	//  since the superclasses were already destructed. At least, do minimal cleanup here with CObjBase methods.
@@ -141,14 +141,25 @@ CObjBase::~CObjBase()
 	EXC_CATCH;
 }
 
+
+bool CObjBase::_IsIdle() const
+{
+	return (GetUID().IsValidUID() && g_World.IsObjIdle(this));
+}
+
+bool CObjBase::IsIdle() const
+{
+	THREAD_SHARED_LOCK_RETURN(_IsIdle());
+}
+
 bool CObjBase::_IsDeleted() const
 {
 	return (!GetUID().IsValidUID() || g_World.IsScheduledObjDeletion(this));
 }
 
 bool CObjBase::IsDeleted() const
-{ 
-	THREAD_SHARED_LOCK_RETURN(_IsDeleted());	
+{
+	THREAD_SHARED_LOCK_RETURN(_IsDeleted());
 }
 
 void CObjBase::DeletePrepare()
@@ -179,7 +190,7 @@ bool CObjBase::Delete(bool fForce)
 	DeleteCleanup(fForce);	// not virtual!
 
 	g_World.ScheduleObjDeletion(this);
-	
+
 	return true;
 }
 
@@ -347,7 +358,7 @@ bool CObjBase::SetNamePool( lpctstr pszName )
 		Str_CopyLimitNull( pszTmp, pszName, STR_TEMPLENGTH );
 
 		tchar * ppTitles[2];
-		Str_ParseCmds( pszTmp, ppTitles, CountOf(ppTitles));
+		Str_ParseCmds( pszTmp, ppTitles, ARRAY_COUNT(ppTitles));
 
 		CResourceLock s;
 		if ( ! g_Cfg.ResourceLock( s, RES_NAMES, ppTitles[0] ))
@@ -658,16 +669,16 @@ void CObjBase::Speak( lpctstr pText, HUE_TYPE wHue, TALKMODE_TYPE mode, FONT_TYP
 void CObjBase::SpeakUTF8( lpctstr pText, HUE_TYPE wHue, TALKMODE_TYPE mode, FONT_TYPE font, CLanguageID lang )
 {
 	ADDTOCALLSTACK_INTENSIVE("CObjBase::SpeakUTF8");
-	// convert UTF8 to UNICODE.
-	nchar szBuffer[ MAX_TALK_BUFFER ];
-	CvtSystemToNUNICODE( szBuffer, CountOf(szBuffer), pText, -1 );
+	// convert UTF8 to UTF16 UNICODE.
+	nachar szBuffer[ MAX_TALK_BUFFER ];
+	CvtSystemToNETUTF16( szBuffer, ARRAY_COUNT(szBuffer), pText, -1 );
 	CWorldComm::SpeakUNICODE( this, szBuffer, wHue, mode, font, lang );
 }
 
 // Speak to all clients in the area.
 // Unicode packet
-// Difference with SpeakUTF8: this method accepts as text input an nword, which is unicode if sphere is compiled with UNICODE macro)
-void CObjBase::SpeakUTF8Ex( const nword * pText, HUE_TYPE wHue, TALKMODE_TYPE mode, FONT_TYPE font, CLanguageID lang )
+// Difference with SpeakUTF8: this method accepts as text input an nachar, which is a network aligned utf16 unicode characters array
+void CObjBase::SpeakUTF8Ex( const nachar * pText, HUE_TYPE wHue, TALKMODE_TYPE mode, FONT_TYPE font, CLanguageID lang )
 {
 	ADDTOCALLSTACK_INTENSIVE("CObjBase::SpeakUTF8Ex");
 	CWorldComm::SpeakUNICODE( this, pText, wHue, mode, font, lang );
@@ -719,12 +730,12 @@ void CObjBase::UpdateObjMessage( lpctstr pTextThem, lpctstr pTextYou, CClient * 
 			continue;
 		if ( ! pClient->CanSee( this ))
 			continue;
-			
+
 		if (( pClient->GetChar() == this ) && pTextYou != nullptr )
 			pClient->addBarkParse(pTextYou, this, wHue, mode, font, bUnicode );
 		else if (( pClient->GetChar() != this ) && pTextThem != nullptr )
 			pClient->addBarkParse(pTextThem, this, wHue, mode, font, bUnicode );
-		
+
 		//pClient->addBarkParse(( pClient->GetChar() == this )? pTextYou : pTextThem, this, wHue, mode, font, bUnicode );
 	}
 }
@@ -814,7 +825,7 @@ lpctstr const CObjBase::sm_szRefKeys[OBR_QTY+1] =
 bool CObjBase::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 {
 	ADDTOCALLSTACK("CObjBase::r_GetRef");
-	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, CountOf(sm_szRefKeys)-1 );
+	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
 	if ( i >= 0 )
 	{
 		ptcKey += strlen( sm_szRefKeys[i] );
@@ -873,7 +884,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 	ADDTOCALLSTACK("CObjBase::r_WriteVal");
 	EXC_TRY("WriteVal");
 
-    int index = FindTableHeadSorted( ptcKey, sm_szLoadKeys, CountOf( sm_szLoadKeys )-1 );
+    int index = FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
     if ( !fNoCallChildren && (index < 0) )
     {
         const size_t uiFunctionIndex = r_GetFunctionIndex(ptcKey);
@@ -1081,7 +1092,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 				tchar * key = const_cast<tchar*>(ptcKey);
 				key += 5;
 				tchar * ptcArg[4];
-				int iArgQty = Str_ParseCmds(key, ptcArg, CountOf(ptcArg));
+				int iArgQty = Str_ParseCmds(key, ptcArg, ARRAY_COUNT(ptcArg));
 				if (iArgQty < 2)
 				{
 					g_Log.EventError("SysMessagef with less than 1 args for the given text\n");
@@ -1095,7 +1106,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 				//strip quotes if any
 				if (*ptcArg[0] == '"')
 					++ptcArg[0];
-				byte count = 0;
+				//byte count = 0;
 				for (tchar * pEnd = ptcArg[0] + strlen(ptcArg[0]) - 1; pEnd >= ptcArg[0]; --pEnd)
 				{
 					if (*pEnd == '"')
@@ -1103,11 +1114,11 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 						*pEnd = '\0';
 						break;
 					}
-					++count;
+					//++count;
 				}
 				sVal.Format(ptcArg[0], ptcArg[1], ptcArg[2] ? ptcArg[2] : 0, ptcArg[3] ? ptcArg[3] : 0);
 				return true;
-			}break;
+			} break;
 		case OC_DIALOGLIST:
 			{
 				ptcKey += 10;
@@ -1290,6 +1301,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 					int iType = g_Cfg.ResourceGetIndexType( RES_TYPEDEF, ptcKey );
 					int iDistance;
 					bool fCheckMulti;
+					bool fCheckMultiZ = false;
 
 					SKIP_IDENTIFIERSTRING( ptcKey );
 					SKIP_SEPARATORS( ptcKey );
@@ -1305,9 +1317,12 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 					else
 						fCheckMulti = Exp_GetVal( ptcKey ) != 0;
 
+					if (fCheckMulti && *ptcKey)
+						fCheckMultiZ = Exp_GetVal(ptcKey) != 0;
+
 					if ( fP )
 					{
-						CPointMap pt = ( index == OC_ISNEARTYPETOP ) ? ( CWorldMap::FindTypeNear_Top(GetTopPoint(), (IT_TYPE)iType, iDistance ) ) : ( CWorldMap::FindItemTypeNearby(GetTopPoint(), (IT_TYPE)iType, iDistance, fCheckMulti ) );
+						CPointMap pt = ( index == OC_ISNEARTYPETOP ) ? ( CWorldMap::FindTypeNear_Top(GetTopPoint(), (IT_TYPE)iType, iDistance ) ) : ( CWorldMap::FindItemTypeNearby(GetTopPoint(), (IT_TYPE)iType, iDistance, fCheckMulti, fCheckMultiZ) );
 
 						if ( !pt.IsValidPoint() )
 							sVal.FormatVal( 0 );
@@ -1549,7 +1564,7 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 			sVal.FormatLLVal( GetTimeStamp() / MSECS_PER_TENTH ); // in tenths of second.
 			break;
 		case OC_VERSION:
-			sVal = SPHERE_VERSION;
+			sVal = SPHERE_BUILD_NAME;
 			break;
 		case OC_WEIGHT:
 			sVal.FormatVal( GetWeight() );
@@ -1605,11 +1620,11 @@ bool CObjBase::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 					size_t iQty = Exp_GetSTVal( ptcKey );
 					if ( iQty >= m_TooltipData.size() )
 						return false;
-					
+
 					CClientTooltip* ct = m_TooltipData[iQty].get();
 					if (!ct)
 						return false;
-						
+
 					SKIP_SEPARATORS( ptcKey );
 					if (! *ptcKey )
 						sVal.Format("%d=%s", ct->m_clilocid, ct->m_args);
@@ -1702,7 +1717,7 @@ bool CObjBase::r_LoadVal( CScript & s )
         }
     }
 
-	int index = FindTableSorted( ptcKey, sm_szLoadKeys, CountOf( sm_szLoadKeys )-1 );
+	int index = FindTableSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 	if ( index < 0 )
 	{
         return CScriptObj::r_LoadVal(s);
@@ -1748,10 +1763,10 @@ bool CObjBase::r_LoadVal( CScript & s )
                 return false;
 
             int64 piVal[2];
-            size_t iQty = Str_ParseCmds(s.GetArgStr(), piVal, CountOf(piVal));
-            m_defenseBase = (uchar)(piVal[0]);
+            size_t iQty = Str_ParseCmds(s.GetArgStr(), piVal, ARRAY_COUNT(piVal));
+            m_defenseBase = (word)(piVal[0]);
             if (iQty > 1)
-                m_defenseRange = (uchar)(piVal[1]) - m_defenseBase;
+                m_defenseRange = (word)(piVal[1]) - m_defenseBase;
             else
                 m_defenseRange = 0;
             CChar * pChar = dynamic_cast <CChar*>(GetTopLevelObj());
@@ -1763,10 +1778,10 @@ bool CObjBase::r_LoadVal( CScript & s )
         case OC_DAM:
         {
             int64 piVal[2];
-            size_t iQty = Str_ParseCmds(s.GetArgStr(), piVal, CountOf(piVal));
-            m_attackBase = (uchar)(piVal[0]);
+            size_t iQty = Str_ParseCmds(s.GetArgStr(), piVal, ARRAY_COUNT(piVal));
+            m_attackBase = (word)(piVal[0]);
             if (iQty > 1)
-                m_attackRange = (uchar)(piVal[1]) - m_attackBase;
+                m_attackRange = (word)(piVal[1]) - m_attackBase;
             else
                 m_attackRange = 0;
             CChar * pChar = dynamic_cast <CChar*>(GetTopLevelObj());
@@ -2003,7 +2018,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 	if ( !strnicmp( ptcKey, "TARGET", 6 ) )
 		index = OV_TARGET;
 	else
-		index = FindTableSorted( ptcKey, sm_szVerbKeys, CountOf(sm_szVerbKeys)-1 );
+		index = FindTableSorted( ptcKey, sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys)-1 );
     if (index < 0)
     {
         const size_t uiFunctionIndex = r_GetFunctionIndex(ptcKey);
@@ -2032,7 +2047,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
             // Add cliloc in @ClientTooltip trigger
             {
                 tchar * ppLocArgs[256];
-                const int qty = Str_ParseCmds(s.GetArgRaw(), ppLocArgs, CountOf(ppLocArgs), ",");
+                const int qty = Str_ParseCmds(s.GetArgRaw(), ppLocArgs, ARRAY_COUNT(ppLocArgs), ",");
 				const dword clilocid = Exp_GetDWVal(ppLocArgs[0]);
 
                 CSString sLocArgs;
@@ -2053,7 +2068,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
         	// Remove cliloc in @ClientTooltip trigger
         	{
                 tchar * ppLocArgs[256];
-                Str_ParseCmds(s.GetArgRaw(), ppLocArgs, CountOf(ppLocArgs), ",");
+                Str_ParseCmds(s.GetArgRaw(), ppLocArgs, ARRAY_COUNT(ppLocArgs), ",");
 				const dword clilocid = Exp_GetDWVal(ppLocArgs[0]);
         		for (size_t i = 0; i < m_TooltipData.size(); ++i)
         		{
@@ -2071,9 +2086,9 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 			// Replace cliloc in @ClientTooltip trigger
 			{
 				tchar * ppLocArgs[256];
-				const int qty = Str_ParseCmds(s.GetArgRaw(), ppLocArgs, CountOf(ppLocArgs), ",");
+				const int qty = Str_ParseCmds(s.GetArgRaw(), ppLocArgs, ARRAY_COUNT(ppLocArgs), ",");
 				const dword clilocid = Exp_GetDWVal(ppLocArgs[0]);
-                
+
                 CSString sLocArgs;
                 for (int y = 1 ; y < qty; ++y )
                 {
@@ -2085,7 +2100,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
                     else
                         sLocArgs += ppLocArgs[y];
                 }
-                
+
                 for (size_t i = 0; i < m_TooltipData.size(); ++i)
                 {
                 	CClientTooltip* ct = m_TooltipData[i].get();
@@ -2102,7 +2117,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 			{
 				EXC_SET_BLOCK("DAMAGE");
 				int64 piCmd[8];
-				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, CountOf(piCmd));
+				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd));
 				if ( iArgQty < 1 )
 					return false;
 				if ( iArgQty > 2 )	// Give it a new source char UID
@@ -2151,7 +2166,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 			{
 				EXC_SET_BLOCK("EFFECT");
 				int64 piCmd[12];
-				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, CountOf(piCmd) );
+				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd) );
 				if ( iArgQty < 2 )
 					return false;
 				const CObjBase * pThis = this;
@@ -2185,7 +2200,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 		{
 			EXC_SET_BLOCK("EFFECTLOCATION");
 			int64 piCmd[15];
-			int iArgQty = Str_ParseCmds(s.GetArgStr(), piCmd, CountOf(piCmd));
+			int iArgQty = Str_ParseCmds(s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd));
 			if (iArgQty < 5)
 				return false;
 			const CObjBase *pThis = this;
@@ -2245,7 +2260,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 					return false;
 
 				tchar *Arg_ppCmd[2];		// Maximum parameters in one line
-				int iQty = Str_ParseCmds( s.GetArgStr(), Arg_ppCmd, CountOf( Arg_ppCmd ));
+				int iQty = Str_ParseCmds( s.GetArgStr(), Arg_ppCmd, ARRAY_COUNT( Arg_ppCmd ));
 
 				CSString sOrgValue;
 				if ( ! r_WriteVal( Arg_ppCmd[0], sOrgValue, pSrc ))
@@ -2276,7 +2291,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 				EXC_SET_BLOCK("MESSAGE or MSG");
 				lpctstr ptcArg = s.GetArgStr();
 				if ( pCharSrc == nullptr )
-					UpdateObjMessage(ptcArg, ptcArg, nullptr, HUE_TEXT_DEF, TALKMODE_SAY);
+					UpdateObjMessage(ptcArg, ptcArg, nullptr, HUE_TEXT_DEF, TALKMODE_ITEM);
 				else
 					pCharSrc->ObjMessage(ptcArg, this);
 			}
@@ -2288,13 +2303,13 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 					break;	// We show the message only to players
 
 				tchar * pszArgs[5];
-				nchar ncBuffer[ MAX_TALK_BUFFER ];
+				nachar ncBuffer[ MAX_TALK_BUFFER ];
 
-				int iArgQty = Str_ParseCmds( s.GetArgRaw(), pszArgs, CountOf(pszArgs) );
+				int iArgQty = Str_ParseCmds( s.GetArgRaw(), pszArgs, ARRAY_COUNT(pszArgs) );
 				if ( iArgQty < 5 )
 					break;
 
-				CvtSystemToNUNICODE( ncBuffer, CountOf( ncBuffer ), pszArgs[4], -1 );
+				CvtSystemToNETUTF16( ncBuffer, ARRAY_COUNT( ncBuffer ), pszArgs[4], -1 );
 				pClientSrc->addBarkUNICODE( ncBuffer, this,
 					(HUE_TYPE)( pszArgs[0][0] ? Exp_GetVal(pszArgs[0]) : HUE_TEXT_DEF ),
 					(TALKMODE_TYPE)( pszArgs[1][0] ? Exp_GetVal(pszArgs[1]) : TALKMODE_SAY ),
@@ -2321,7 +2336,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 				CObjBase *pObjNear;
 				int64 piCmd[4];
 
-				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, CountOf(piCmd) );
+				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd) );
 				if ( iArgQty <= 0 )
 					return false;
 				if ( iArgQty < 3 )
@@ -2361,7 +2376,13 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 		case OV_P:
         {
 			EXC_SET_BLOCK("P or MOVETO");
-            CPointMap pt( g_Cfg.GetRegionPoint(s.GetArgStr()) );
+			// The "@Click" trigger str should be the same between items and chars...
+			if (0 == _sRunningTrigger.compare(CChar::sm_szTrigName[CTRIG_Click]))
+			{
+				g_Log.EventError("Can't set P in the current trigger. It would cause an infinite loop.\n");
+				return false;
+			}
+            const CPointMap pt( g_Cfg.GetRegionPoint(s.GetArgStr()) );
             if (pt.IsValidPoint())
             {
                 RemoveFromView();
@@ -2381,7 +2402,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 
 				tchar * pszArgs[2];
 
-				int iArgQty = Str_ParseCmds( s.GetArgRaw(), pszArgs, CountOf(pszArgs) );
+				int iArgQty = Str_ParseCmds( s.GetArgRaw(), pszArgs, ARRAY_COUNT(pszArgs) );
 				if ( iArgQty == 0 )
 					break;
 
@@ -2406,7 +2427,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 				EXC_SET_BLOCK("RESENDTOOLTIP");
 
 				int64 piCmd[2];
-				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, CountOf(piCmd) );
+				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd) );
 
 				bool fSendFull = false;
 				bool fUseCache = false;
@@ -2435,7 +2456,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 			{
 				EXC_SET_BLOCK("SAYUA");
 				tchar * pszArgs[5];
-				int iArgQty = Str_ParseCmds( s.GetArgRaw(), pszArgs, CountOf(pszArgs) );
+				int iArgQty = Str_ParseCmds( s.GetArgRaw(), pszArgs, ARRAY_COUNT(pszArgs) );
 				if ( iArgQty < 5 )
 					break;
 
@@ -2451,7 +2472,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 			{
 				EXC_SET_BLOCK("SOUND");
 				int64 piCmd[2];
-				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, CountOf(piCmd));
+				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd));
 				if (!iArgQty)
 					return false;
 				Sound( (SOUND_TYPE)(piCmd[0]), ( iArgQty > 1 ) ? (int)(piCmd[1]) : 1 );
@@ -2461,7 +2482,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 			{
 				EXC_SET_BLOCK("SPELLEFFECT");
 				int64 piCmd[4];
-				size_t iArgs = Str_ParseCmds( s.GetArgStr(), piCmd, CountOf(piCmd));
+				size_t iArgs = Str_ParseCmds( s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd));
 				CItem * pItemSrc = nullptr;
 				switch( iArgs )
 				{
@@ -2497,14 +2518,14 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
         	EXC_SET_BLOCK("CLILOCLIST");
             if (! strcmpi(s.GetArgStr(), "log"))
                 pSrc = &g_Serv;
-                
+
             if (!pSrc)
             	break;
-				
+
             for (size_t i = 0; i < this->m_TooltipData.size(); i++)
             {
 				CClientTooltip* ct = this->m_TooltipData[i].get();
-				
+
 				/*
 				//Parse tchar into string.
                 tchar *ppLocArgs = ct->m_args;
@@ -2525,7 +2546,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 					pSrc->SysMessagef("%d=%s", ct->m_clilocid, ct->m_args);
 				else
 					g_Log.Event(LOGL_EVENT, "%d=%s\n", ct->m_clilocid, ct->m_args);
-			}		
+			}
 		}break;
         case OV_BASETAGLIST:
         {
@@ -2589,7 +2610,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 						if ( IsStrEmpty(s.GetArgStr()) )
 							break;
 						char * ppArg[3];
-						Str_ParseCmds( s.GetArgStr(), ppArg, CountOf(ppArg), "," );
+						Str_ParseCmds( s.GetArgStr(), ppArg, ARRAY_COUNT(ppArg), "," );
 						if ( !IsStrNumeric( ppArg[1] ))
 							DEBUG_ERR(("Invalid argument in Target Multi\n"));
 						ITEMID_TYPE itemid = (ITEMID_TYPE)(Exp_GetVal(ppArg[1]));
@@ -2604,7 +2625,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 					if ( fMulti )
 					{
                         char *ppArg[2];
-                        Str_ParseCmds(s.GetArgStr(), ppArg, CountOf(ppArg), ",");
+                        Str_ParseCmds(s.GetArgStr(), ppArg, ARRAY_COUNT(ppArg), ",");
 						if ( !IsStrNumeric(ppArg[0]))
 							DEBUG_ERR(("Invalid argument in Target Multi\n"));
 						ITEMID_TYPE itemid = (ITEMID_TYPE)(Exp_GetVal(ppArg[0]));
@@ -2623,7 +2644,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 				EXC_SET_BLOCK("TIMERF(MS)");
 				const bool fSeconds = (index == OV_TIMERF);
 				lpctstr ptcArgStr = s.GetArgStr();
-				
+
 				if ( !strnicmp(ptcArgStr, "CLEAR", 5 ) )
 				{
 					CWorldTimedFunctions::ClearUID(GetUID());
@@ -2684,7 +2705,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 					return false;
 
 				tchar *	Arg_ppCmd[3];		// Maximum parameters in one line
-				size_t iQty = Str_ParseCmds( s.GetArgStr(), Arg_ppCmd, CountOf( Arg_ppCmd ));
+				size_t iQty = Str_ParseCmds( s.GetArgStr(), Arg_ppCmd, ARRAY_COUNT( Arg_ppCmd ));
 				if ( iQty < 1 )
 					return false;
 
@@ -2716,7 +2737,7 @@ bool CObjBase::r_Verb( CScript & s, CTextConsole * pSrc ) // Execute command fro
 					return false;
 
 				tchar *	Arg_ppCmd[2];		// Maximum parameters in one line
-				size_t iQty = Str_ParseCmds( s.GetArgStr(), Arg_ppCmd, CountOf( Arg_ppCmd ));
+				size_t iQty = Str_ParseCmds( s.GetArgStr(), Arg_ppCmd, ARRAY_COUNT( Arg_ppCmd ));
 				if ( iQty < 1 )
 					return false;
 
@@ -3117,35 +3138,46 @@ void CObjBase::_GoSleep()
 	CWorldTickingList::DelObjStatusUpdate(this, false);
 }
 
-bool CObjBase::_CanTick() const
+bool CObjBase::_CanTick(bool fParentGoingToSleep) const
 {
-	EXC_TRY("Can tick?");
+	ADDTOCALLSTACK_INTENSIVE("CObjBase::_CanTick");
+	// This doesn't check the sector sleeping status, it's only about this object.
+    EXC_TRY("Can tick?");
 
-	// Directly call the method specifying the belonging class, to avoid the overhead of vtable lookup under the hood.
-	bool fCanTick = !CTimedObject::_IsSleeping();
+    // Directly call the method specifying the belonging class, to avoid the overhead of vtable lookup under the hood.
+    bool fCanTick = fParentGoingToSleep ? false : !CTimedObject::_IsSleeping();
 
-	if (fCanTick)
-	{
-		if (const CSObjCont* pParent = GetParent())
-		{
-			const CObjBase* pObjParent = dynamic_cast<const CObjBase*>(pParent);
-			// The parent can be another CObjBase or even a Sector -> Do not use CTimedObject* ?
-			if (pObjParent && !pObjParent->CanTick())	// It calls the virtuals obviously
-				fCanTick = false;
-		}
-	}
+    if (fCanTick)
+    {
+        if (const CSObjCont* pParent = GetParent())
+        {
+            const CObjBase* pObjParent = dynamic_cast<const CObjBase*>(pParent);
+            // The parent can be another CObjBase (or a Sector, but we are not interested in that case)
+			if (pObjParent)
+			{
+				if (fParentGoingToSleep)
+					fCanTick = false;
+				else
+					fCanTick = pObjParent->CanTick(fParentGoingToSleep);
+			}
 
-	if (!fCanTick)
-	{
-		// Try to call the Can method the less often possible.
-		fCanTick = Can(CAN_O_NOSLEEP);
-	}
+        }
+    }
 
-	return fCanTick;
+    if (!fCanTick)
+    {
+        // Try to call the Can method the less often possible.
+		//
+		// This should happen only if the item was manually put to sleep.
+		// CAN_O_NOSLEEP items should not be put to sleep by the source.
+	    fCanTick = Can(CAN_O_NOSLEEP);
+    }
 
-	EXC_CATCH;
+    return fCanTick;
 
-	return false;
+    EXC_CATCH;
+
+    return false;
 }
 
 void CObjBase::ResendTooltip(bool fSendFull, bool fUseCache)
@@ -3511,7 +3543,7 @@ bool CObjBase::CallPersonalTrigger(tchar * pArgs, CTextConsole * pSrc, TRIGRET_T
 {
 	ADDTOCALLSTACK("CObjBase::CallPersonalTrigger");
 	tchar * ppCmdTrigger[3];
-	size_t iResultArgs = Str_ParseCmds(pArgs, ppCmdTrigger, CountOf(ppCmdTrigger), ",");
+	size_t iResultArgs = Str_ParseCmds(pArgs, ppCmdTrigger, ARRAY_COUNT(ppCmdTrigger), ",");
 
 	if ( iResultArgs > 0 )
 	{
@@ -3525,7 +3557,7 @@ bool CObjBase::CallPersonalTrigger(tchar * pArgs, CTextConsole * pSrc, TRIGRET_T
 			if ( iTriggerArgType == 1 ) // 3 ARGNs
 			{
 				int64 Arg_piCmd[3];
-				iResultArgs = Str_ParseCmds(ppCmdTrigger[2], Arg_piCmd, CountOf(Arg_piCmd), ",");
+				iResultArgs = Str_ParseCmds(ppCmdTrigger[2], Arg_piCmd, ARRAY_COUNT(Arg_piCmd), ",");
 
 				if ( iResultArgs == 3 )
 					csTriggerArgs.m_iN3 = Arg_piCmd[2];
@@ -3551,7 +3583,7 @@ bool CObjBase::CallPersonalTrigger(tchar * pArgs, CTextConsole * pSrc, TRIGRET_T
 			else if ( iTriggerArgType == 4 ) // FULL TRIGGER
 			{
 				tchar * Arg_ppCmd[5];
-				iResultArgs = Str_ParseCmds(ppCmdTrigger[2], Arg_ppCmd, CountOf(Arg_ppCmd), ",");
+				iResultArgs = Str_ParseCmds(ppCmdTrigger[2], Arg_ppCmd, ARRAY_COUNT(Arg_ppCmd), ",");
 
 				// ARGS
 				if ( iResultArgs == 5 )

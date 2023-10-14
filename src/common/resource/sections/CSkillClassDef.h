@@ -6,7 +6,7 @@
 #ifndef _INC_SKILLCLASSDEF_H
 #define _INC_SKILLCLASSDEF_H
 
-#include "../../game/uo_files/uofiles_enums.h"
+#include "../../../game/uo_files/uofiles_enums.h"
 #include "../../sphere_library/CSString.h"
 #include "../CResourceLink.h"
 
@@ -46,7 +46,7 @@ private:
     CSkillClassDef& operator=(const CSkillClassDef& other);
 
 public:
-    lpctstr GetName() const { return( m_sName ); }
+    virtual lpctstr GetName() const override { return( m_sName ); }
 
     bool r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc = nullptr, bool fNoCallParent = false, bool fNoCallChildren = false ) override;
     bool r_LoadVal( CScript & s ) override;

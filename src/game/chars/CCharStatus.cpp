@@ -265,9 +265,12 @@ bool CChar::CanCarry( const CItem *pItem ) const
         if (this != pObjTop)    // Aren't we already carrying it ?
             iItemWeight = pItem->GetWeight();
     }
-    else if (pItem->GetEquipLayer() != LAYER_DRAGGING)
+    else if (pItem->GetEquipLayer() != LAYER_DRAGGING && !pItem->IsItemEquipped())
     {
-        // if we're dragging the item, its weight is already added on char so don't count it again
+        /*
+		If we're dragging the item, its weight is already added on char so don't count it again.
+		Same if we are already wearing the item, don't count the item weight again.
+		*/
         iItemWeight = pItem->GetWeight();
     }
 
@@ -277,7 +280,7 @@ bool CChar::CanCarry( const CItem *pItem ) const
 void CChar::ContentAdd( CItem * pItem, bool fForceNoStack )
 {
 	ADDTOCALLSTACK("CChar::ContentAdd");
-	UNREFERENCED_PARAMETER(fForceNoStack);
+	UnreferencedParameter(fForceNoStack);
 	ItemEquip(pItem);
 	//LayerAdd( pItem, LAYER_QTY );
 }
@@ -444,8 +447,8 @@ LAYER_TYPE CChar::CanEquipLayer( CItem *pItem, LAYER_TYPE layer, CChar *pCharMsg
 			{
 				if ( !CanMove(pItemPrev) )
 					return LAYER_NONE;
-				if ( !fTest )
-					ItemBounce(pItemPrev);
+				if (!fTest && !ItemBounce(pItemPrev) )
+					return LAYER_NONE;
 				break;
 			}
 		}
@@ -454,14 +457,15 @@ LAYER_TYPE CChar::CanEquipLayer( CItem *pItem, LAYER_TYPE layer, CChar *pCharMsg
 	return layer;
 }
 
-int CChar::GetHealthPercent() const
+int CChar::GetStatPercent(STAT_TYPE i) const
 {
-	ADDTOCALLSTACK("CChar::GetHealthPercent");
-	ushort str = Stat_GetAdjusted(STAT_STR);
-	if ( !str )
+	ADDTOCALLSTACK("CChar::GetStatPercent");
+	ushort maxval = Stat_GetMaxAdjusted(i);
+	if (!maxval)
 		return 0;
-	return IMulDiv(Stat_GetVal(STAT_STR), 100, str);
+	return IMulDiv(Stat_GetVal(i), 100, maxval);
 }
+
 
 const CObjBaseTemplate* CChar::GetTopLevelObj() const
 {
@@ -735,9 +739,9 @@ CItem *CChar::GetSpellbook(SPELL_TYPE iSpell) const	// Retrieves a spellbook fro
 	ADDTOCALLSTACK("CChar::GetSpellbook");
 	// Search for suitable book in hands first
 	CItem* pReturn = nullptr;
-	CItem* pItem = LayerFind(LAYER_HAND1);    // Let's do first a direct search for any book in hands.
-	if (pItem && pItem->IsTypeSpellbook() )
-    {
+	CItem* pItem = GetSpellbookLayer();
+	if ( pItem )
+	{
 		const CItemBase *pItemDef = pItem->Item_GetDef();
 		const SPELL_TYPE min = (SPELL_TYPE)pItemDef->m_ttSpellbook.m_iOffset;
 		const SPELL_TYPE max = (SPELL_TYPE)(pItemDef->m_ttSpellbook.m_iOffset + pItemDef->m_ttSpellbook.m_iMaxSpells);
@@ -749,8 +753,7 @@ CItem *CChar::GetSpellbook(SPELL_TYPE iSpell) const	// Retrieves a spellbook fro
 		    	pReturn = pItem;
 		}
     }
-
-	// No book found or found one which doesn't have the spell I am going to cast, then let's search in the top level of the backpack.
+	// No book found in layer 1 or 2 or found one which doesn't have the spell I am going to cast, then let's search in the top level of the backpack.
 	CItemContainer *pPack = GetPack();
 	if ( pPack )
 	{
@@ -773,6 +776,17 @@ CItem *CChar::GetSpellbook(SPELL_TYPE iSpell) const	// Retrieves a spellbook fro
 		}
 	}
 	return pReturn;
+}
+
+CItem * CChar::GetSpellbookLayer() const //Retrieve a Spellbook from Layer 1 or Layer 2
+{
+	CItem* pItem = LayerFind(LAYER_HAND1);    // Let's do first a direct search for any book in hand layer 1.
+	if (pItem && pItem->IsTypeSpellbook())
+		return pItem;
+	pItem = LayerFind(LAYER_HAND2); // on custom freeshard, it's possible to have book on layer 2
+	if (pItem && pItem->IsTypeSpellbook())
+		return pItem;
+	return nullptr;
 }
 
 short CChar::Food_GetLevelPercent() const
@@ -818,8 +832,8 @@ lpctstr CChar::Food_GetLevelMessage(bool fPet, bool fHappy) const
 			g_Cfg.GetDefaultMsg(DEFMSG_MSG_PET_FOOD_8)
 		};
 
-		if ( index >= (CountOf(sm_szPetHunger) - 1) )
-			index = CountOf(sm_szPetHunger) - 1;
+		if ( index >= (ARRAY_COUNT(sm_szPetHunger) - 1) )
+			index = ARRAY_COUNT(sm_szPetHunger) - 1;
 
 		return fHappy ? sm_szPetHappy[index] : sm_szPetHunger[index];
 	}
@@ -836,8 +850,8 @@ lpctstr CChar::Food_GetLevelMessage(bool fPet, bool fHappy) const
 		g_Cfg.GetDefaultMsg(DEFMSG_MSG_FOOD_LVL_8)
 	};
 
-	if ( index >= (CountOf(sm_szFoodLevel) - 1) )
-		index = CountOf(sm_szFoodLevel) - 1;
+	if ( index >= (ARRAY_COUNT(sm_szFoodLevel) - 1) )
+		index = ARRAY_COUNT(sm_szFoodLevel) - 1;
 
 	return sm_szFoodLevel[index];
 }
@@ -1323,7 +1337,7 @@ bool CChar::CanTouch( const CObjBase *pObj ) const
             if (pWeapon)
             {
                 IT_TYPE iType = pWeapon->GetType();
-                if ((iType == IT_WEAPON_BOW) || (iType == IT_WEAPON_XBOW))
+                if ((iType == IT_WEAPON_BOW) || (iType == IT_WEAPON_XBOW) || (iType == IT_WEAPON_THROWING))
                     return (iDist <= pWeapon->GetRangeH());
             }
             break;
@@ -1821,10 +1835,13 @@ CRegion *CChar::CheckValidMove( CPointMap &ptDest, dword *pdwBlockFlags, DIR_TYP
 			return nullptr;
 	}
 
-    if ( !ptDest.IsValidPoint() )
+    if (!ptDest.IsValidPoint())
     {
-        DEBUG_ERR(("Character with uid=0%x on %d,%d,%d,%d wants to move into an invalid location %d,%d,%d,%d.\n",
-            GetUID().GetObjUID(), ptOld.m_x, ptOld.m_y, ptOld.m_z, ptOld.m_map, ptDest.m_x, ptDest.m_y, ptDest.m_z, ptDest.m_map));
+		if (!ptOld.IsValidPoint())
+		{
+			DEBUG_WARN(("Character with UID=0%x on invalid location %d,%d,%d,%d wants to move into another invalid location %d,%d,%d,%d.\n",
+				GetUID().GetObjUID(), ptOld.m_x, ptOld.m_y, ptOld.m_z, ptOld.m_map, ptDest.m_x, ptDest.m_y, ptDest.m_z, ptDest.m_map));
+		}
         return nullptr;
     }
 

@@ -1,13 +1,13 @@
+#include "../common/CException.h"
 #include "../sphere/ProfileTask.h"
 #include "../sphere/threads.h"
-#include "../CException.h"
 #include "CWorldGameTime.h"
 #include "CWorldTickingList.h"
 #include "CTimedObject.h"
 
 
 CTimedObject::CTimedObject(PROFILE_TYPE profile) noexcept :
-    _profileType(profile), _fIsSleeping(true), _iTimeout(0)
+    _iTimeout(0), _profileType(profile), _fIsSleeping(true)
 {
 }
 
@@ -39,16 +39,17 @@ void CTimedObject::_GoAwake()
     _fIsSleeping = false;
 }
 
-bool CTimedObject::_CanTick() const
+bool CTimedObject::_CanTick(bool fParentGoingToSleep) const
 {
     //ADDTOCALLSTACK_INTENSIVE("CTimedObject::_CanTick");
+    UnreferencedParameter(fParentGoingToSleep);
     return !_IsSleeping();
 }
 
-bool CTimedObject::CanTick() const
+bool CTimedObject::CanTick(bool fParentGoingToSleep) const
 {
     //ADDTOCALLSTACK_INTENSIVE("CTimedObject::CanTick");
-    THREAD_SHARED_LOCK_RETURN(_CanTick());
+    THREAD_SHARED_LOCK_RETURN(_CanTick(fParentGoingToSleep));
 }
 
 bool CTimedObject::OnTick()

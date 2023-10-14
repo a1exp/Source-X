@@ -274,7 +274,7 @@ uint CCSpawn::WriteName(tchar *ptcOut) const
 void CCSpawn::Delete(bool fForce)
 {
     ADDTOCALLSTACK("CCSpawn::Delete");
-    UNREFERENCED_PARAMETER(fForce);
+    UnreferencedParameter(fForce);
     KillChildren();
     if (_fIsBadSpawn == true)
     {
@@ -285,7 +285,7 @@ void CCSpawn::Delete(bool fForce)
 void CCSpawn::GenerateItem()
 {
     ADDTOCALLSTACK("CCSpawn::GenerateItem");
-    
+
     CItem *pSpawnItem = GetLink();
     if (!pSpawnItem->IsTopLevel())
         return;
@@ -418,7 +418,7 @@ CChar* CCSpawn::GenerateChar(CResourceIDBase rid)
     if (pChar->GetTopPoint().IsValidPoint() == false)// Try to place it only if the @Spawn trigger didn't set it a valid P.
     {
         ushort iPlacingTries = 0;
-        while (!pChar->MoveNear(pt, _iMaxDist ? (word)(Calc_GetRandVal(_iMaxDist) + 1) : 1) || pChar->IsStuck(false))
+        while (!pChar->MoveNear(pt, _iMaxDist ? (word)(Calc_GetRandVal(_iMaxDist) + 1) : 1) || pChar->IsStuck(false) || !pChar->CanSeeLOS(pt)) //Character shouldn't spawn where can't see it's spawn point.
         {
             ++iPlacingTries;
             if (iPlacingTries <= 3)
@@ -438,7 +438,16 @@ CChar* CCSpawn::GenerateChar(CResourceIDBase rid)
     }
 
     // Check if the NPC can spawn in this region
+    /*
+    // We don't want this behavior anymore.
     const CRegion *pRegion = pt.GetRegion(REGION_TYPE_AREA);
+    if (!pRegion || (pRegion->IsGuarded() && pChar->Noto_IsEvil()))
+    {
+        g_Log.EventWarn("Spawner UID=0%" PRIx32 " is trying to spawn an evil NPC into a guarded area. Deleting the NPC.\n", (dword)pSpawnItem->GetUID());
+        pChar->Delete();
+        return nullptr;
+    }
+    */
 
     AddObj(pChar->GetUID());
     pChar->NPC_CreateTrigger();		// removed from NPC_LoadScript() and triggered after char placement and attachment to the spawnitem
@@ -503,24 +512,59 @@ void CCSpawn::DelObj(const CUID& uid)
         return;
     }
 
-    CItem *pSpawnItem = static_cast<CItem*>(GetLink());
     auto itObj = std::find(_uidList.begin(), _uidList.end(), uid);
-    if (itObj != _uidList.end())
+
+    if (itObj == _uidList.end())
     {
-        CObjBase *pSpawnedObj = uid.ObjFind();
-        if (pSpawnedObj && !pSpawnedObj->IsDeleted())
-        {
-            pSpawnedObj->SetSpawn(nullptr);
-            const IT_TYPE iSpawnType = pSpawnItem->GetType();
-            if ((iSpawnType == IT_SPAWN_CHAR) || (iSpawnType == IT_SPAWN_CHAMPION))
-            {
-                CChar *pSpawnedChar = dynamic_cast<CChar*>(pSpawnedObj);
-                if (pSpawnedChar)
-                    pSpawnedChar->StatFlag_Clear(STATF_SPAWNED);
-            }
-        }
-        _uidList.erase(itObj);
+        return;
     }
+
+    CItem *pSpawnItem = static_cast<CItem*>(GetLink());
+    pSpawnItem->m_CanMask |= CAN_O_NOSLEEP; //Avoid the spawn point to sleep until job is finish
+
+
+	CObjBase* pSpawnedObj = uid.ObjFind();
+	if (pSpawnedObj && !pSpawnedObj->IsDeleted())
+	{
+		pSpawnedObj->SetSpawn(nullptr);
+		const IT_TYPE iSpawnType = pSpawnItem->GetType();
+		if ((iSpawnType == IT_SPAWN_CHAR) || (iSpawnType == IT_SPAWN_CHAMPION))
+		{
+			CChar* pSpawnedChar = dynamic_cast<CChar*>(pSpawnedObj);
+			if (pSpawnedChar)
+				pSpawnedChar->StatFlag_Clear(STATF_SPAWNED);
+		}
+	}
+
+	if (pSpawnItem->_GetTimerAdjusted() == -1)
+	{
+        int64 iMinutes;
+		if (_iTimeHi <= 0)
+		{
+			iMinutes = Calc_GetRandLLVal(30) + 1;
+		}
+		else
+		{
+			iMinutes = Calc_GetRandVal2(_iTimeLo, _iTimeHi);
+		}
+
+		if (iMinutes <= 0)
+		{
+			iMinutes = 1;
+		}
+		pSpawnItem->_SetTimeoutS(iMinutes * 60);	// set time to check again.
+	}
+	_uidList.erase(itObj);
+
+    if (IsTrigUsed(TRIGGER_DELOBJ))
+    {
+        CScriptTriggerArgs args;
+        args.m_pO1 = pSpawnItem;
+        args.m_iN1 = pSpawnItem->_GetTimerAdjusted() / MSECS_PER_SEC;
+        pSpawnItem->OnTrigger(ITRIG_DELOBJ, &g_Serv, &args);
+        pSpawnItem->_SetTimeoutS(args.m_iN1);
+    }
+
     pSpawnItem->UpdatePropertyFlag();
 }
 
@@ -582,11 +626,34 @@ void CCSpawn::AddObj(const CUID& uid)
             pChar->m_ptHome = pSpawnItem->GetTopPoint();
             pChar->m_pNPC->m_Home_Dist_Wander = (word)_iMaxDist;
         }
+
+        if (GetCurrentSpawned() +1 >= GetAmount()) //Adding one because the item is not yet added at this moment
+        {
+            pSpawnItem->_SetTimeoutS(-1);
+        }
+
+        if (IsTrigUsed(TRIGGER_ADDOBJ))
+        {
+            CScriptTriggerArgs args;
+            args.m_pO1 = pSpawnedObj;
+            const int64 iTimer= pSpawnItem->_GetTimerAdjusted();
+            args.m_iN1 = (iTimer < 0) ? -1 : iTimer/MSECS_PER_SEC;
+            pSpawnItem->OnTrigger(ITRIG_ADDOBJ, &g_Serv, &args);
+            pSpawnItem->_SetTimeoutS(args.m_iN1);
+        }
         pSpawnItem->UpdatePropertyFlag();
     }
 
     // Done with checks, let's add this.
-    _uidList.emplace_back(uid); 
+    _uidList.emplace_back(uid);
+
+    if (GetCurrentSpawned() >= GetAmount())
+    {
+        pSpawnItem->m_CanMask &= ~CAN_O_NOSLEEP;
+
+        if (pSpawnItem->GetTopSector()->IsSleeping())
+            pSpawnItem->_GoSleep();
+    }
 }
 
 CCRET_TYPE CCSpawn::OnTickComponent()
@@ -632,6 +699,11 @@ CCRET_TYPE CCSpawn::OnTickComponent()
 void CCSpawn::KillChildren()
 {
     ADDTOCALLSTACK("CCSpawn::KillChildren");
+
+    CItem* pSpawnItem = static_cast<CItem*>(GetLink());
+    if (pSpawnItem->IsValidUID())
+        pSpawnItem->m_CanMask |= CAN_O_NOSLEEP;
+
     if (_uidList.empty())
     {
         return;
@@ -733,10 +805,10 @@ lpctstr const CCSpawn::sm_szLoadKeys[ISPW_QTY + 1] =
 bool CCSpawn::r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole *pSrc)
 {
     ADDTOCALLSTACK("CCSpawn::r_WriteVal");
-    UNREFERENCED_PARAMETER(pSrc);
+    UnreferencedParameter(pSrc);
     EXC_TRY("WriteVal");
 
-    int iCmd = FindTableSorted(ptcKey, sm_szLoadKeys, CountOf(sm_szLoadKeys) - 1);
+    int iCmd = FindTableSorted(ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys) - 1);
     if (iCmd < 0)
     {
         return false;
@@ -816,7 +888,7 @@ bool CCSpawn::r_LoadVal(CScript & s)
     ADDTOCALLSTACK("CCSpawn::r_LoadVal");
     EXC_TRY("LoadVal");
 
-    int iCmd = FindTableSorted(s.GetKey(), sm_szLoadKeys, CountOf(sm_szLoadKeys) - 1);
+    int iCmd = FindTableSorted(s.GetKey(), sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys) - 1);
     if (iCmd < 0)
     {
         return false;
@@ -845,8 +917,8 @@ bool CCSpawn::r_LoadVal(CScript & s)
                 return true;
             }
             CResourceIDBase ridArg(dwPrivateUID);    // Not using CResourceID because res_chardef, spawn, itemdef, template do not use the "page" arg
-            const int iRidIndex = ridArg.GetResIndex();
-            const int iRidType  = ridArg.GetResType();
+            const uint iRidIndex = ridArg.GetResIndex();
+            const uint iRidType  = ridArg.GetResType();
             switch (pSpawnItem->GetType())
             {
                 case IT_SPAWN_CHAR:
@@ -963,7 +1035,7 @@ bool CCSpawn::r_LoadVal(CScript & s)
             if (IsDigit(pszTemp[0]) || pszTemp[0] == '-')
             {
                 tchar * ppVal[3];
-                iArgs = Str_ParseCmds(pszTemp, ppVal, CountOf(ppVal), " ,\t");
+                iArgs = Str_ParseCmds(pszTemp, ppVal, ARRAY_COUNT(ppVal), " ,\t");
                 switch (iArgs)
                 {
                     case 3: // m_z
@@ -1053,12 +1125,17 @@ lpctstr const CCSpawn::sm_szRefKeys[ISPR_QTY + 1]
 bool CCSpawn::r_GetRef(lpctstr & ptcKey, CScriptObj *& pRef)
 {
     ADDTOCALLSTACK("CCSpawn::r_GetRef");
-    int iCmd = FindTableSorted(ptcKey, sm_szRefKeys, CountOf(sm_szRefKeys) - 1);
+    int iCmd = -1;
+    if (!strnicmp(ptcKey, "at.", 3))
+        iCmd = FindTableSorted("at", sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys) - 1);
+    else
+        iCmd = FindTableSorted(ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys) - 1);
 
     if (iCmd < 0)
     {
         return false;
     }
+
 
     CItem *pItem = static_cast<CItem*>(GetLink());
 
@@ -1123,8 +1200,8 @@ lpctstr const CCSpawn::sm_szVerbKeys[ISPV_QTY + 1]
 bool CCSpawn::r_Verb(CScript & s, CTextConsole * pSrc)
 {
     ADDTOCALLSTACK("CCSpawn::r_Verb");
-    UNREFERENCED_PARAMETER(pSrc);
-    int iCmd = FindTableSorted(s.GetKey(), sm_szVerbKeys, CountOf(sm_szVerbKeys) - 1);
+    UnreferencedParameter(pSrc);
+    int iCmd = FindTableSorted(s.GetKey(), sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys) - 1);
     if (iCmd < 0)
     {
         return false;

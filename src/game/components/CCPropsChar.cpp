@@ -12,7 +12,7 @@ lpctstr const CCPropsChar::_ptcPropertyKeys[PROPCH_QTY + 1] =
     nullptr
 };
 KeyTableDesc_s CCPropsChar::GetPropertyKeysData() const {
-    return {_ptcPropertyKeys, (PropertyIndex_t)CountOf(_ptcPropertyKeys)};
+    return {_ptcPropertyKeys, (PropertyIndex_t)ARRAY_COUNT(_ptcPropertyKeys)};
 }
 
 RESDISPLAY_VERSION CCPropsChar::_iPropertyExpansion[PROPCH_QTY + 1] =
@@ -82,7 +82,7 @@ bool CCPropsChar::IsPropertyStr(PropertyIndex_t iPropIndex) const
             return false;
     }
     */
-    UNREFERENCED_PARAMETER(iPropIndex);
+    UnreferencedParameter(iPropIndex);
     return false;
 }
 
@@ -145,7 +145,7 @@ void CCPropsChar::SetPropertyNum(PropertyIndex_t iPropIndex, PropertyValNum_t iV
         {
             // This should be used in case items with these properties updates the character in the moment without any script to make status reflect the update.
             // Maybe too a cliver check to not send update if not needed.
-            if (IsSetCombatFlags(COMBAT_ELEMENTAL_ENGINE))
+            if (IsSetCombatFlags(COMBAT_ELEMENTAL_ENGINE) || g_Cfg.m_fDisplayElementalResistance)
             {
                 CChar * pChar = static_cast <CChar*>(pLinkedObj);
                 pChar->UpdateStatsFlag();
@@ -270,7 +270,7 @@ void CCPropsChar::AddPropsTooltipData(CObjBase* pLinkedObj)
 #define ADDTNUM(tooltipID)  TOOLTIP_APPEND(new CClientTooltip(tooltipID, iVal))
 #define ADDTSTR(tooltipID)  TOOLTIP_APPEND(new CClientTooltip(tooltipID, ptcVal))
 
-    UNREFERENCED_PARAMETER(pLinkedObj);
+    UnreferencedParameter(pLinkedObj);
 
     /* Tooltips for "dynamic" properties (stored in the BaseConts: _mPropsNum and _mPropsStr) */
     

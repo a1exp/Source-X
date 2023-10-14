@@ -13,8 +13,11 @@
 	#include <process.h>
 	#include <objbase.h>
 #elif !defined(_BSD)
+#ifndef __APPLE__
 	#include <sys/prctl.h>
 #endif
+#endif
+
 
 // number of exceptions after which we restart thread and think that the thread have gone in exceptioning loops
 #define EXCEPTIONS_ALLOWED	10
@@ -635,12 +638,12 @@ void AbstractSphereThread::printStackTrace()
 	// don't allow call stack to be modified whilst we're printing it
 	freezeCallStack(true);
     
-    const uint threadId = getId();
+    const uint64_t threadId = static_cast<uint64_t>(getId());
     const lpctstr threadName = getName();
 
 	g_Log.EventDebug("Printing STACK TRACE for debugging purposes.\n");
-	g_Log.EventDebug(" __ thread (id) name __ |  # | _____________ function _____________ |\n");
-	for ( size_t i = 0; i < CountOf(m_stackInfo); ++i )
+	g_Log.EventDebug(" _______ thread (id) name _______ |  # | _____________ function _____________ |\n");
+	for ( size_t i = 0; i < ARRAY_COUNT(m_stackInfo); ++i )
 	{
 		if( m_stackInfo[i].functionName == nullptr )
 			break;
@@ -655,7 +658,7 @@ void AbstractSphereThread::printStackTrace()
                 extra = "<-- exception catch point (below is guessed and could be incorrect!)";
         }
 
-		g_Log.EventDebug("(%0.5u)%16.16s | %2u | %36.36s | %s\n",
+		g_Log.EventDebug("(%" PRIx64 ") %16.16s | %2u | %36.36s | %s\n",
 			threadId, threadName, (uint)i, m_stackInfo[i].functionName, extra);
 	}
 

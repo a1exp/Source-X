@@ -393,6 +393,11 @@ void CWorldThread::ScheduleSpecialObjDeletion(CSObjListRec* obj)
 	m_ObjSpecialDelete.InsertContentTail(obj);
 }
 
+bool CWorldThread::IsObjIdle(const CSObjContRec* obj) const noexcept
+{
+	return (obj->GetParent() == &m_ObjNew);
+}
+
 bool CWorldThread::IsScheduledObjDeletion(const CSObjContRec* obj) const noexcept
 {
 	return (obj->GetParent() == &m_ObjDelete);
@@ -559,7 +564,7 @@ void CWorldThread::GarbageCollection_UIDs()
 			if ( iResultCode )
 			{
 				// FixObj directly calls Delete method
-				//if (pObj->IsBeingDeleted() || pObj->IsDeleted())
+				//if (pObj->_IsBeingDeleted() || pObj->IsDeleted())
 				//{
 					// Do an immediate delete here instead of Delete()
 					delete pObj;
@@ -1334,6 +1339,7 @@ bool CWorld::LoadWorld() // Load world from script
 		CWorldTickingList::ClearTickingLists();
 
 		m_Stones.clear();
+		m_Multis.clear();
 		m_Parties.ClearContainer();
 		m_GMPages.ClearContainer();
 
@@ -1492,12 +1498,12 @@ lpctstr const CWorld::sm_szLoadKeys[WC_QTY+1] =	// static
 
 bool CWorld::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, bool fNoCallParent, bool fNoCallChildren )
 {
-    UNREFERENCED_PARAMETER(fNoCallParent);
-    UNREFERENCED_PARAMETER(fNoCallChildren);
+    UnreferencedParameter(fNoCallParent);
+    UnreferencedParameter(fNoCallChildren);
 	ADDTOCALLSTACK("CWorld::r_WriteVal");
 	EXC_TRY("WriteVal");
 
-	switch ( FindTableSorted( ptcKey, sm_szLoadKeys, CountOf(sm_szLoadKeys)-1 ))
+	switch ( FindTableSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys)-1 ))
 	{
         case WC_CURTICK:
             sVal.Format64Val(_GameClock.GetCurrentTick());
@@ -1538,7 +1544,7 @@ bool CWorld::r_LoadVal( CScript &s )
 	EXC_TRY("LoadVal");
 
 	lpctstr	ptcKey = s.GetKey();
-	switch ( FindTableSorted( ptcKey, sm_szLoadKeys, CountOf(sm_szLoadKeys)-1 ))
+	switch ( FindTableSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys)-1 ))
 	{
 		case WC_PREVBUILD:
 			m_iPrevBuild = s.GetArgVal();
@@ -1608,7 +1614,7 @@ void CWorld::Restock()
 	g_Log.Event(LOGL_EVENT, "World Restock: started.\n");
 	g_Serv.SetServerMode(SERVMODE_RestockAll);
 
-	for ( size_t i = 0; i < CountOf(g_Cfg.m_ResHash.m_Array); ++i )
+	for ( size_t i = 0; i < ARRAY_COUNT(g_Cfg.m_ResHash.m_Array); ++i )
 	{
 		for ( size_t j = 0; j < g_Cfg.m_ResHash.m_Array[i].size(); ++j )
 		{
@@ -1650,6 +1656,7 @@ void CWorld::Close()
 		Save(true);
 
 	m_Stones.clear();
+	m_Multis.clear();
 
     {
         std::unique_lock<std::shared_mutex> lock_su(_Ticker._ObjStatusUpdates.THREAD_CMUTEX);
@@ -1756,7 +1763,7 @@ void CWorld::_OnTick()
 		{
 			EXC_SET_BLOCK("f_onserver_timer");
 			_iTimeLastCallUserFunc = iCurTime + g_Cfg._iTimerCall;
-			CScriptTriggerArgs args(g_Cfg._iTimerCall / (60 * MSECS_PER_SEC));
+			CScriptTriggerArgs args(g_Cfg._iTimerCallUnit ? g_Cfg._iTimerCall / (MSECS_PER_SEC) : g_Cfg._iTimerCall / (60 * MSECS_PER_SEC));
 			g_Serv.r_Call("f_onserver_timer", &g_Serv, &args);
 		}
 	}

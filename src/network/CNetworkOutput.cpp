@@ -1,6 +1,7 @@
 #include "../game/clients/CClient.h"
 #include "../game/CServerConfig.h"
 #include "../sphere/threads.h"
+#include "../sphere/ProfileTask.h"
 #include "packet.h"
 #include "CNetState.h"
 #include "CNetworkThread.h"
@@ -17,7 +18,7 @@
 ***************************************************************************/
 void CALLBACK SendCompleted_Winsock(DWORD dwError, DWORD cbTransferred, LPWSAOVERLAPPED lpOverlapped, DWORD dwFlags)
 {
-	UNREFERENCED_PARAMETER(dwFlags);
+	UnreferencedParameter(dwFlags);
 	ADDTOCALLSTACK("SendCompleted_Winsock");
 
 	CNetState* state = reinterpret_cast<CNetState*>(lpOverlapped->hEvent);

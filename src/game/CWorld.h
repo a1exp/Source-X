@@ -20,6 +20,7 @@ class CSector;
 class CObjBaseTemplate;
 class CObjBase;
 class CItemStone;
+class CItemMulti;
 
 
 enum IMPFLAGS_TYPE	// IMPORT and EXPORT flags.
@@ -83,6 +84,7 @@ public:
 	void AddIdleObj(CSObjContRec* obj);
 	void ScheduleObjDeletion(CSObjContRec* obj);
 	void ScheduleSpecialObjDeletion(CSObjListRec* obj);
+	NODISCARD bool IsObjIdle(const CSObjContRec* obj) const noexcept;
 	NODISCARD bool IsScheduledObjDeletion(const CSObjContRec* obj) const noexcept;
 	NODISCARD bool IsScheduledSpecialObjDeletion(const CSObjListRec* obj) const noexcept;
 
@@ -127,7 +129,7 @@ private:
 	// Map cache
 	friend class CServer;
 	friend class CWorldMap;
-	CWorldCache _Cache;	
+	CWorldCache _Cache;
 
 	// Sector data
 	friend class CSectorList;
@@ -141,7 +143,7 @@ private:
 	int64	_iTimeLastDeadRespawn;		// when to res dead NPC's ?
 	int64	_iTimeLastCallUserFunc;		// when to call next user func
 	ullong	m_ticksWithoutMySQL;		// MySQL should be running constantly if MySQLTicks is true, keep here record of how much ticks since Sphere is not connected.
-    
+
 	int		_iSaveStage;	// Current stage of the background save.
 	llong	_iSaveTimer;	// Time it takes to save
 
@@ -157,13 +159,14 @@ public:
 	CUID m_uidNew;			// for script access - auxiliary obj
 
 	CSObjList m_GMPages;		// Current outstanding GM pages. (CGMPage)
-	
+
 	CSPtrTypeArray<CItemStone*> m_Stones;	// links to leige/town stones. (not saved array)
 	CSObjList m_Parties;	// links to all active parties. CPartyDef
 
 	static lpctstr const sm_szLoadKeys[];
 	CSPtrTypeArray <CItemTypeDef *> m_TileTypes;
 
+	CSPtrTypeArray<CItemMulti*> m_Multis;	//
 
 private:
 	bool LoadFile( lpctstr pszName, bool fError = true );
@@ -205,7 +208,7 @@ public:
 	void GarbageCollection();
 	void Restock();
 	void RespawnDeadNPCs();
-	
+
 	static bool OpenScriptBackup(CScript& s, lpctstr pszBaseDir, lpctstr pszBaseName, int savecount);
     bool CheckAvailableSpaceForSave(bool fStatics);
 	bool Save( bool fForceImmediate ); // Save world state
@@ -217,7 +220,9 @@ public:
 	bool Export(lpctstr pszFilename, const CChar* pSrc, word iModeFlags = IMPFLAGS_ITEMS, int iDist = INT16_MAX, int dx = 0, int dy = 0);
 	bool Import(lpctstr pszFilename, const CChar* pSrc, word iModeFlags = IMPFLAGS_ITEMS, int iDist = INT16_MAX, tchar* pszAgs1 = nullptr, tchar* pszAgs2 = nullptr);
 
-	lpctstr GetName() const { return "World"; }
+	virtual lpctstr GetName() const override {
+	    return "World";
+	    }
 
 } g_World;
 

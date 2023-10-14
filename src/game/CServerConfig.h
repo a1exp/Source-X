@@ -80,7 +80,9 @@ enum OF_TYPE
     OF_StatAllowValOverMax          = 0x0100000,    // Allow stats value above their maximum value (i.e. allow hits value > maxhits).
     OF_GuardOutsideGuardedArea      = 0x0200000,    // Allow guards to walk in unguarded areas, instead of being teleported back to their home point.
     OF_OWNoDropCarriedItem          = 0x0400000,     // When overweighted, don't drop items on ground when moving them (or using BOUNCE) and checking if you can carry them.
-    OF_AllowContainerInsideContainer = 0x0800000    //Allow containers inside other containers even if they are heavier than the container being inserted into.
+    OF_AllowContainerInsideContainer = 0x0800000,    //Allow containers inside other containers even if they are heavier than the container being inserted into.
+    OF_VendorStockLimit              = 0x01000000,   // Limits how much of an item a vendor can buy using the value set in the TEMPLATE. Format: BUY=ID,AMOUNT
+    OF_EnableGuildAlignNotoriety     = 0x02000000    // If enabled, guilds with the same alignment will see each other as enemy or ally.
 };
 
 /**
@@ -117,7 +119,8 @@ enum COMBATFLAGS_TYPE
     COMBAT_ANIM_HIT_SMOOTH      = 0x10000,  // The hit animation has the same duration as the swing delay, instead of having a fixed fast duration and being idle until the delay has expired.
                                             //   WARNING: doesn't work with Gargoyles due to the new animation packet not accepting a custom animation duration!
     COMBAT_FIRSTHIT_INSTANT     = 0x20000,  // The first hit in a fight doesn't wait for the recoil time (OSI like)
-	COMBAT_NPC_BONUSDAMAGE		= 0x40000	// NPC will get full bonus damage from various sources.
+	COMBAT_NPC_BONUSDAMAGE		= 0x40000,	// NPC will get full bonus damage from various sources.
+    COMBAT_PARALYZE_CANSWING    = 0x80000   // Characters can continue attacking while paralyzed. (Old sphere behaviour)
 };
 
 /**
@@ -283,6 +286,7 @@ public:
     bool m_fManaLossFail;       // Lose mana when spell casting failed.
     int  m_fManaLossPercent;    // Percent of mana loss when missing a cast
     bool m_fNPCCanFizzleOnHit;  // NPCs can fizzle the spell when hit in combat.
+    int m_iNPCHealthreshold;    // Minimum value in percent at which the NPCs will start to heal themselves with a spell.
     bool m_fReagentLossAbort;   // Lose reagents when spell casting abort.
 	bool m_fReagentLossFail;    // Lose reagents when spell casting failed.
 	int  m_iMagicUnlockDoor;    // 1 in N chance of magic unlock working on doors -- 0 means never.
@@ -346,9 +350,10 @@ public:
     uint m_iCombatParryingEra;      // Parrying behaviour flags
 	int  m_iSkillPracticeMax;		// max skill level a player can practice on dummies/targets upto.
 	bool m_iPacketDeathAnimation;	// packet 02c
-    bool m_fDisplayPercentAr;       // Display the ARMOR value in the tooltip as the % 
+    bool m_fDisplayPercentAr;       // Display the ARMOR value in the tooltip as the %
+    bool m_fDisplayElementalResistance; //Display the Elemental and MAxElemental Resistances on the paperdoll and tooltips (RESFIRE/RESCOLD/RESENERGY/RESPOISON) even if combat flag Elemental Engine is disabled.
 
-	// Flags for controlling pvp/pvm behaviour of players
+    // Flags for controlling pvp/pvm behaviour of players
 	uint m_iCombatFlags;   // combat flags
 	uint m_iMagicFlags;    // magic flags
 	uint m_iRacialFlags;   // racial traits flags
@@ -374,7 +379,7 @@ public:
 	int  m_iMaxFame;				// Maximum fame level
 
 	// other
-	
+
     int  m_iAutoProcessPriority;
 	uint _uiExperimentalFlags;	// Experimental Flags.
 	uint _uiOptionFlags;		// Option Flags.
@@ -496,6 +501,7 @@ public:
 
 	//	color noto flag
 	HUE_TYPE m_iColorNotoGood;          // Blue
+    HUE_TYPE m_iColorNotoGoodNPC;       // Blue (NPC)
 	HUE_TYPE m_iColorNotoGuildSame;     // Green
 	HUE_TYPE m_iColorNotoNeutral;       // Grey
 	HUE_TYPE m_iColorNotoCriminal;      // Grey
@@ -545,7 +551,8 @@ public:
 
 	int64   m_iRegenRate[STAT_QTY]; // Regen's delay for each stat (in seconds in the ini, then converted to msecs).
     int64   _iItemHitpointsUpdate;  // Update period for CCItemDamageable (in seconds in the ini, then converted to msecs).
-	int64   _iTimerCall;            // Amount of minutes (converted to milliseconds internally) to call f_onserver_timer (0 disables this, default).
+	int64   _iTimerCall;            // Amount of time (converted to milliseconds internally) to call f_onserver_timer (0 disables this, default).
+    bool    _iTimerCallUnit;        // TRUE mean TimerCall is in second and FALSE mean it's in minute
 	bool    m_bAllowLightOverride;  // Allow manual sector light override?
 	CSString m_sZeroPoint;          // Zero point for sextant coordinates counting. Comment this line out if you are not using ML-sized maps.
 	bool    m_fAllowBuySellAgent;   // Allow rapid Buy/Sell through Buy/Sell agent.
@@ -556,7 +563,7 @@ public:
 
 	bool    m_bAgree;               // AGREE=n for nightly builds.
 	int     m_iMaxPolyStats;        // Max amount of each Stat gained through Polymorph spell. This affects separatelly to each stat.
-    
+
     bool    m_NPCShoveNPC;           //NPC can walk through other NPC, by default this is disabled.
 	// End INI file options.
 
@@ -657,7 +664,7 @@ public:
      *
      * @return  true if it succeeds, false if it fails.
      */
-	bool LoadResourceSection( CScript * pScript );
+	virtual bool LoadResourceSection( CScript * pScript ) override;
 
     /**
      * @brief   Sort all spells in order.
@@ -671,7 +678,7 @@ public:
      *
      * @return  null if it fails, else a pointer to a CResourceDef.
      */
-	CResourceDef * ResourceGetDef( const CResourceID& rid ) const;
+	virtual CResourceDef * ResourceGetDef( const CResourceID& rid ) const override;
 
 	// Print EF/OF Flags
 	void PrintEFOFFlags( bool bEF = true, bool bOF = true, CTextConsole *pSrc = nullptr );
@@ -988,11 +995,11 @@ public:
 
     /*
     *@brief Calculates mana cost of a spell, taking in consideration the LowerManaCost and and if is  being cast by a wand or scroll.
-    * 
+    *
     * @param pCharCaster: The caster casting the spell.
     * @param pSpell: The spell being cast.
     * @param pObj: The item (if any) from whom the spell is being cast.
-    * 
+    *
     * @return The mana cost of the spell if any.
     */
     ushort Calc_SpellManaCost(CChar * pCharCaster, const CSpellDef * pSpell, CObjBase * pObj);
@@ -1010,7 +1017,7 @@ public:
 
     /*
     *@brief Calculates tithing cost of a spell, taking in consideration the LowerReagentCost property and if is  being cast by a wand or scroll.
-    *        
+    *
     * @param pCharCaster: The caster casting the spell.
     * @param pSpell: The spell being cast.
     * @param pObj: The item (if any) from whom the spell is being cast.
@@ -1021,10 +1028,10 @@ public:
 
     /*
     * @brief Calculates the chance of curing a poison effect.
-    * 
+    *
     * @param pPoison: The poison item.
     * @param iCureLevel: The power level of the cure, this can be from a cure spell/potion or from healing/veterinary.
-    * 
+    *
     * @return True the check passed and the poison is removed, false the check failed and the poison is not removed.
     */
     bool Calc_CurePoisonChance(const CItem* pPoison, int iCureLevel, bool fIsGm = false );

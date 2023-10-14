@@ -1,4 +1,4 @@
-#include "../../common/flat_containers/flat_set.hpp"
+#include "../../../lib/flat_containers/flat_set.hpp"
 #include "../../common/resource/CResourceLock.h"
 #include "../../common/CException.h"
 #include "../../network/CClientIterator.h"
@@ -35,7 +35,7 @@ bool CChar::TeleportToObj( int iType, tchar * pszArgs )
 	dword dwUID = m_Act_UID.GetObjUID() & ~UID_F_ITEM;
 	dword dwCount = dwTotal-1;
 
-	int iArg = 0;
+	uint iArg = 0;
 	if ( iType )
 	{
 		if ( pszArgs[0] && iType == 1 )
@@ -645,7 +645,7 @@ void CChar::UnEquipAllItems( CItemContainer * pDest, bool fLeaveHands )
 				break;
 		}
 
-		if ( pDest && !pItem->IsAttr(ATTR_NEWBIE|ATTR_MOVE_NEVER|ATTR_BLESSED|ATTR_INSURED|ATTR_NODROP|ATTR_NOTRADE) )
+		if ( pDest && !pItem->IsAttr(ATTR_NEWBIE|ATTR_MOVE_NEVER|ATTR_BLESSED|ATTR_INSURED|ATTR_NODROP|ATTR_NOTRADE|ATTR_QUESTITEM) )
 		{
 			// Move item to dest (corpse usually)
 			pDest->ContentAdd(pItem);
@@ -792,7 +792,7 @@ void CChar::UpdateStatVal( STAT_TYPE type, int iChange, ushort uiLimit )
 ANIM_TYPE CChar::GenerateAnimate( ANIM_TYPE action, bool fTranslate, bool fBackward, byte iFrameDelay, byte iAnimLen )
 {
 	ADDTOCALLSTACK("CChar::UpdateAnimate");
-	UNREFERENCED_PARAMETER(iAnimLen);
+	UnreferencedParameter(iAnimLen);
 	if ( action < 0 || action >= ANIM_QTY )
 		return (ANIM_TYPE)-1;
 
@@ -1555,14 +1555,14 @@ void CChar::SoundChar( CRESND_TYPE type )
 
 					if (type == CRESND_HIT)
 					{
-						id = sm_Snd_Hit[ Calc_GetRandVal( CountOf( sm_Snd_Hit )) ];		// same sound for every race and sex
+						id = sm_Snd_Hit[ Calc_GetRandVal( ARRAY_COUNT( sm_Snd_Hit )) ];		// same sound for every race and sex
 					}
 					else if ( pCharDef->IsFemale() )
 					{
 						switch ( type )
 						{
-							case CRESND_GETHIT:	id = sm_Snd_Wom_Omf[ Calc_GetRandVal( CountOf(sm_Snd_Wom_Omf)) ];	break;
-							case CRESND_DIE:	id = sm_Snd_Wom_Die[ Calc_GetRandVal( CountOf(sm_Snd_Wom_Die)) ];	break;
+							case CRESND_GETHIT:	id = sm_Snd_Wom_Omf[ Calc_GetRandVal( ARRAY_COUNT(sm_Snd_Wom_Omf)) ];	break;
+							case CRESND_DIE:	id = sm_Snd_Wom_Die[ Calc_GetRandVal( ARRAY_COUNT(sm_Snd_Wom_Die)) ];	break;
 							default:	break;
 						}
 					}
@@ -1570,8 +1570,8 @@ void CChar::SoundChar( CRESND_TYPE type )
 					{
 						switch ( type )
 						{
-							case CRESND_GETHIT:	id = sm_Snd_Man_Omf[ Calc_GetRandVal( CountOf(sm_Snd_Man_Omf)) ];	break;
-							case CRESND_DIE:	id = sm_Snd_Man_Die[ Calc_GetRandVal( CountOf(sm_Snd_Man_Die)) ];	break;
+							case CRESND_GETHIT:	id = sm_Snd_Man_Omf[ Calc_GetRandVal( ARRAY_COUNT(sm_Snd_Man_Omf)) ];	break;
+							case CRESND_DIE:	id = sm_Snd_Man_Die[ Calc_GetRandVal( ARRAY_COUNT(sm_Snd_Man_Die)) ];	break;
 							default:	break;
 						}
 					}
@@ -1785,6 +1785,9 @@ int CChar::ItemPickup(CItem * pItem, word amount)
 		if ( IsPriv(PRIV_ALLMOVE|PRIV_GM) ) ;
 		else if ( pItem->IsAttr(ATTR_STATIC|ATTR_MOVE_NEVER) || pItem->IsType(IT_SPELL) )
 			return -1;
+		CCSpawn* pSpawn = pItem->GetSpawn();
+		if (pSpawn)
+			pSpawn->DelObj(pItem->GetUID());
 	}
 
 	if ( trigger != ITRIG_UNEQUIP )	// unequip is done later.
@@ -1812,7 +1815,8 @@ int CChar::ItemPickup(CItem * pItem, word amount)
 	{
         // Create an leftover item when pick up only part of the stack
         CItem* pItemNew = pItem->UnStackSplit(amount, this);
-		pItemNew->SetTimeout(pItem->GetDecayTime());    // Set it's timer to the real decay, in case it gets forced to be drop on ground.
+		if (pItemNew->IsAttr(ATTR_DECAY)) //Don't set timer if item stay in the bag because causing error on Login.
+			pItemNew->SetTimeout(pItem->GetDecayTime());    // Set it's timer to the real decay, in case it gets forced to be drop on ground.
 
         if (IsTrigUsed(TRIGGER_PICKUP_STACK) || IsTrigUsed(TRIGGER_ITEMPICKUP_STACK))
         {
@@ -1903,15 +1907,15 @@ bool CChar::ItemBounce( CItem * pItem, bool fDisplayMsg )
 
 		if (IsTrigUsed(TRIGGER_DROPON_SELF) || IsTrigUsed(TRIGGER_ITEMDROPON_SELF))
 		{
-            const CItem* pPrevCont = dynamic_cast<CItem*>(pItem->GetContainer());
+			const CItem* pPrevCont = dynamic_cast<CItem*>(pItem->GetContainer());
 			CScriptTriggerArgs Args(pItem);
-            const TRIGRET_TYPE ret = pPack->OnTrigger(ITRIG_DROPON_SELF, this, &Args);
-            if ( pItem->IsDeleted() )	// the trigger had deleted the item
-                return false;
+			const TRIGRET_TYPE ret = pPack->OnTrigger(ITRIG_DROPON_SELF, this, &Args);
+			if (pItem->IsDeleted())	// the trigger had deleted the item
+				return false;
 			if (ret == TRIGRET_RET_TRUE)
-            {
+			{
 				fCanAddToPack = false;
-                const CItem* pCont = dynamic_cast<const CItem*>(pItem->GetContainer());
+				const CItem* pCont = dynamic_cast<const CItem*>(pItem->GetContainer());
 				if (pPrevCont == pCont) //In the same cont, but unable to go there
 					fDropOnGround = true;
 				else //we changed the cont in the script
@@ -1920,13 +1924,16 @@ bool CChar::ItemBounce( CItem * pItem, bool fDisplayMsg )
 					snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_MSG_BOUNCE_CONT), pCont->GetName());
 					pszWhere = pszMsg;
 				}
-            }
+			}
 		}
 	}
-    else
-    {
-        fDropOnGround = true;
-    }
+	else if ( pItem->GetEquipLayer() > LAYER_NONE && pItem->GetEquipLayer() <= LAYER_LEGS) //If we are overweight, we don't want our equipped items to fall on the ground. They will remain equipped.
+	{
+		SysMessageDefault(DEFMSG_MSG_HEAVY);
+		return false;
+	}
+	else
+		fDropOnGround = true;
 
 	if (fCanAddToPack)
 	{
@@ -1974,7 +1981,7 @@ bool CChar::ItemBounce( CItem * pItem, bool fDisplayMsg )
                 ptDrop = ptDropNew;
         }
 
-        UNREFERENCED_PARAMETER(ttResult);
+        UnreferencedParameter(ttResult);
         /*
         // RETURN 1 has a different meaning when used in a trigger call not generated by a bounce check, so it's better to avoid this additional behaviour
         //  (which, anyways, can be easily achieved via scripts)
@@ -2218,7 +2225,7 @@ void CChar::EatAnim( lpctstr pszName, ushort uiQty )
 {
 	ADDTOCALLSTACK("CChar::EatAnim");
 	static const SOUND_TYPE sm_EatSounds[] = { 0x03a, 0x03b, 0x03c };
-	Sound(sm_EatSounds[Calc_GetRandVal(CountOf(sm_EatSounds))]);
+	Sound(sm_EatSounds[Calc_GetRandVal(ARRAY_COUNT(sm_EatSounds))]);
 
 	if ( !IsStatFlag(STATF_ONHORSE) )
 		UpdateAnimate(ANIM_EAT);
@@ -2369,7 +2376,7 @@ void CChar::SpeakUTF8( lpctstr pszText, HUE_TYPE wHue, TALKMODE_TYPE mode, FONT_
 // Ignore the font argument here !
 // Unicode packet
 // Difference with SpeakUTF8: this method accepts as text input an nword, which is a unicode character if sphere is compiled with UNICODE macro)
-void CChar::SpeakUTF8Ex( const nword * pszText, HUE_TYPE wHue, TALKMODE_TYPE mode, FONT_TYPE font, CLanguageID lang )
+void CChar::SpeakUTF8Ex( const nachar * pszText, HUE_TYPE wHue, TALKMODE_TYPE mode, FONT_TYPE font, CLanguageID lang )
 {
 	ADDTOCALLSTACK("CChar::SpeakUTF8Ex");
 
@@ -2464,7 +2471,7 @@ CItem* CChar::Horse_GetMountItem() const
 			const CChar* pRider = dynamic_cast<const CChar*>(pMountItem->GetTopLevelObj());
 			if (pRider)
 			{
-				if (!IsStatFlag(STATF_PET) && !pRider->IsPriv(PRIV_GM) && (pRider->GetPrivLevel() <= PLEVEL_Player))
+				if (!IsStatFlag(STATF_CONJURED) && !IsStatFlag(STATF_PET) && !pRider->IsPriv(PRIV_GM) && (pRider->GetPrivLevel() <= PLEVEL_Player))
 					return nullptr;
 
 				const CItem* pOwnerMountItem = pRider->LayerFind(LAYER_HORSE);
@@ -2805,7 +2812,7 @@ bool CChar::Horse_UnMount()
 		this actarg1 value is stored in the NPC not in the player.
 		The commented  line below cleared the actarg1 of the rider instead of the NPC mount.
 		*/
-        //m_atRidden.m_uidFigurine.InitUID(); 
+        //m_atRidden.m_uidFigurine.InitUID();
 		if (pPet && !pPet->IsDeleted())
 			pPet->m_atRidden.m_uidFigurine.InitUID(); //This clears the actarg1 of the NPC mount instead of the rider.
 	}
@@ -2953,7 +2960,7 @@ bool CChar::SetPoison( int iSkill, int iHits, CChar * pCharSrc )
 	if ( !pPoison )
 		return false;
 	LayerAdd(pPoison, LAYER_FLAG_Poison);
-	
+
 	if (!IsSetMagicFlags(MAGICF_OSIFORMULAS))
 	{
 		//pPoison->m_itSpell.m_spellcharges has already been set by Spell_Effect_Create (and it's equal to iSkill)
@@ -3005,7 +3012,7 @@ bool CChar::SetPoison( int iSkill, int iHits, CChar * pCharSrc )
 		}
 	}
 
-	
+
 
 	CClient *pClient = GetClientActive();
 	if ( pClient && IsSetOF(OF_Buffs) )
@@ -3083,7 +3090,16 @@ bool CChar::Death()
 		if ( OnTrigger(CTRIG_Death, this) == TRIGRET_RET_TRUE )
 			return true;
 	}
-
+	//Dismount now. Later is may be too late and cause problems
+	if ( m_pNPC )
+	{
+		if (Skill_GetActive() == NPCACT_RIDDEN)
+		{
+			CChar* pCRider = Horse_GetMountChar();
+			if (pCRider)
+				pCRider->Horse_UnMount();
+		}
+	}
 	// Look through memories of who I was fighting (make sure they knew they where fighting me)
 	for (CSObjContRec* pObjRec : GetIterationSafeContReverse())
 	{
@@ -3286,11 +3302,17 @@ bool CChar::OnFreezeCheck() const
 		if ( m_pPlayer->m_speedMode & 0x04 )	// speed mode '4' prevents movement
 			return true;
 
-		if ( IsSetMagicFlags(MAGICF_FREEZEONCAST) && g_Cfg.IsSkillFlag(m_Act_SkillCurrent, SKF_MAGIC) )		// casting magic spells
+		if ( g_Cfg.IsSkillFlag(m_Act_SkillCurrent, SKF_MAGIC) )		// casting magic spells
 		{
 			const CSpellDef *pSpellDef = g_Cfg.GetSpellDef(m_atMagery.m_iSpell);
-			if ( pSpellDef && !pSpellDef->IsSpellType(SPELLFLAG_NOFREEZEONCAST) )
-				return true;
+			if ( pSpellDef )
+			{
+				if ( IsSetMagicFlags(MAGICF_FREEZEONCAST) && !pSpellDef->IsSpellType(SPELLFLAG_NOFREEZEONCAST) )
+					return true;
+
+				if ( !IsSetMagicFlags(MAGICF_FREEZEONCAST) && pSpellDef->IsSpellType(SPELLFLAG_FREEZEONCAST) )
+					return true;
+			}
 		}
 	}
 
@@ -3403,18 +3425,29 @@ CRegion * CChar::CanMoveWalkTo( CPointMap & ptDst, bool fCheckChars, bool fCheck
 
 			uiStamReq = 10;		// Stam consume for push the char. OSI seem to be 10% and not a fix 10
 			if ( IsPriv(PRIV_GM) || pChar->IsStatFlag(STATF_DEAD) || (pChar->IsStatFlag(STATF_INVISIBLE|STATF_HIDDEN) && !(g_Cfg.m_iRevealFlags & REVEALF_OSILIKEPERSONALSPACE)) )
-				uiStamReq = 0;	// On SPHERE, need 0 stam to reveal someone 
+				uiStamReq = 0;	// On SPHERE, need 0 stam to reveal someone
 			else if ( (pPoly && pPoly->m_itSpell.m_spell == SPELL_Wraith_Form) && (GetTopMap() == 0) )		// chars under Wraith Form effect can always walk through chars in Felucca
 				uiStamReq = 0;
 
 			TRIGRET_TYPE iRet = TRIGRET_RET_DEFAULT;
-			if ( IsTrigUsed(TRIGGER_PERSONALSPACE) && (!fPathFinding)) //You want avoid to trig the trigger if it's only a pathfinding evaluation
+			if (!fPathFinding)  //You want avoid to trig the triggers if it's only a pathfinding evaluation
 			{
-				CScriptTriggerArgs Args(uiStamReq);
-				iRet = pChar->OnTrigger(CTRIG_PersonalSpace, this, &Args);
-				if ( iRet == TRIGRET_RET_TRUE )
-					return nullptr;
-                uiStamReq = (ushort)(Args.m_iN1);
+				if ( IsTrigUsed(TRIGGER_PERSONALSPACE) )
+				{
+					CScriptTriggerArgs Args(uiStamReq);
+					iRet = pChar->OnTrigger(CTRIG_PersonalSpace, this, &Args);
+					if ( iRet == TRIGRET_RET_TRUE )
+						return nullptr;
+                			uiStamReq = (ushort)(Args.m_iN1);
+				}
+				if ( IsTrigUsed(TRIGGER_CHARSHOVE) )
+				{
+					CScriptTriggerArgs Args(uiStamReq);
+					iRet = this->OnTrigger(CTRIG_charShove, pChar, &Args);
+					if ( iRet == TRIGRET_RET_TRUE )
+						return nullptr;
+                			uiStamReq = (ushort)(Args.m_iN1);
+				}
 			}
 
 
@@ -3428,12 +3461,12 @@ CRegion * CChar::CanMoveWalkTo( CPointMap & ptDst, bool fCheckChars, bool fCheck
 				SysMessage(pszMsg);
 				return nullptr;
 			}
-			
+
 			else if (pChar->IsStatFlag(STATF_INVISIBLE | STATF_HIDDEN) ) {
 				if ((g_Cfg.m_iRevealFlags & REVEALF_OSILIKEPERSONALSPACE))
-					// OSILIKEPERSONALSPACE flag block the reveal but DEFMSG_HIDING_STUMBLE_OSILIKE is send. To avoid it, simply use return 1 in @PERSONALSPACE 
+					// OSILIKEPERSONALSPACE flag block the reveal but DEFMSG_HIDING_STUMBLE_OSILIKE is send. To avoid it, simply use return 1 in @PERSONALSPACE
 					snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_HIDING_STUMBLE_OSILIKE));
-				else 
+				else
 				{
 					snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_HIDING_STUMBLE), pChar->GetName());
 					if (!fPathFinding) // When NPC use pathfinding(NPC_AI_PATH) to calculate their destination, char should not be reveal
@@ -3445,7 +3478,7 @@ CRegion * CChar::CanMoveWalkTo( CPointMap & ptDst, bool fCheckChars, bool fCheck
 				snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_MSG_STEPON_BODY), pChar->GetName());
 			else
 				snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(DEFMSG_MSG_PUSH), pChar->GetName());
-			
+
 			if ( iRet != TRIGRET_RET_FALSE )
 				SysMessage(pszMsg);
 
@@ -3454,7 +3487,7 @@ CRegion * CChar::CanMoveWalkTo( CPointMap & ptDst, bool fCheckChars, bool fCheck
 	}
 
 	if ( !fCheckOnly )
-	{		
+	{
 		// Falling trigger
 		//lack config feature for sphere.ini if wanted.
 		if (GetTopZ() - 10 >= ptDst.m_z)
@@ -3471,7 +3504,7 @@ CRegion * CChar::CanMoveWalkTo( CPointMap & ptDst, bool fCheckChars, bool fCheck
 		EXC_SET_BLOCK("Stamina penalty");
         if (iWeight < iMaxWeight) //Normal situation
 		{
-			ushort iWeightLoadPercent = (iWeight * 100) / iMaxWeight;
+			int iWeightLoadPercent = (iWeight * 100) / iMaxWeight;
 			ushort uiStamPenalty = 0;
 
 			CVarDefCont* pVal = GetKey("OVERRIDE.RUNNINGPENALTY", true);
@@ -3479,30 +3512,30 @@ CRegion * CChar::CanMoveWalkTo( CPointMap & ptDst, bool fCheckChars, bool fCheck
 			if (IsStatFlag(STATF_FLY | STATF_HOVERING))
 			{
 				//FIXME: Running penality should be a percentage... For now, it adding a flat value take on the ini.
-				iWeightLoadPercent += (pVal ? (int)(pVal->GetValNum()) : g_Cfg.m_iStamRunningPenalty) ;
+				iWeightLoadPercent += (pVal ? (int)pVal->GetValNum() : g_Cfg.m_iStamRunningPenalty);
 			}
-			int iChanceForStamLoss = Calc_GetSCurve(iWeightLoadPercent - (pVal ? (int)(pVal->GetValNum()) : g_Cfg.m_iStaminaLossAtWeight), 10);
+			const int iChanceForStamLoss = Calc_GetSCurve(iWeightLoadPercent - (pVal ? (int)(pVal->GetValNum()) : g_Cfg.m_iStaminaLossAtWeight), 10);
 			if (iChanceForStamLoss > Calc_GetRandVal(1000))
 			{
 
 				pVal = GetKey("OVERRIDE.STAMINAWALKINGPENALTY", true);
-				uiStamPenalty = ushort(pVal ? pVal->GetValNum() : 1);
-				
+				uiStamPenalty = (ushort)std::min(USHRT_MAX, int(pVal ? pVal->GetValNum() : 1));
+
 			}
 			uiStamReq += uiStamPenalty;
 		}
-		
+
 		else //Overweight and lost more stamina each step
         {
-            ushort iWeightPenalty = ushort(g_Cfg.m_iStaminaLossOverweight + ((iWeight - iMaxWeight) / 5));
+            ushort uiWeightPenalty = ushort(g_Cfg.m_iStaminaLossOverweight + ((iWeight - iMaxWeight) / 5));
 
             if (IsStatFlag(STATF_ONHORSE))
-                iWeightPenalty /= 3;
+				uiWeightPenalty /= 3;
 
 			if (IsStatFlag(STATF_FLY | STATF_HOVERING))
-                iWeightPenalty += ushort((iWeightPenalty * g_Cfg.m_iStamRunningPenaltyOverweight) / 100);
+				uiWeightPenalty += ushort((uiWeightPenalty * g_Cfg.m_iStamRunningPenaltyOverweight) / 100);
 
-            uiStamReq += iWeightPenalty;
+            uiStamReq += uiWeightPenalty;
         }
 
 		if ( uiStamReq > 0 )
@@ -3674,7 +3707,7 @@ TRIGRET_TYPE CChar::CheckLocation( bool fStanding )
 				return TRIGRET_RET_DEFAULT;
 			case IT_SHIP_PLANK:
 			case IT_ROPE:
-				if ( !fStanding && !IsStatFlag(STATF_HOVERING) )
+				if ( !fStanding && !IsStatFlag(STATF_HOVERING) && !pItem->IsAttr(ATTR_STATIC) )
 				{
 					// Check if we can go out of the ship (in the same direction of plank)
                     //bool fFromShip = (nullptr != GetTopSector()->GetRegion(GetTopPoint(), REGION_TYPE_SHIP)); // always true
@@ -3919,15 +3952,17 @@ bool CChar::MoveToChar(const CPointMap& pt, bool fStanding, bool fCheckLocation,
 		return false;
 
 	CClient *pClient = GetClientActive();
-	if ( m_pPlayer && !pClient )	// moving a logged out client !
+	if ( m_pPlayer && !pClient )	// moving a logged out client ! This happens on startup and when moving on a ship and when moving around disconnected characters by other means.
 	{
 		CSector *pSector = pt.GetSector();
 		if ( !pSector )
 			return false;
 
-		// We cannot put this char in non-disconnect state.
+		// We cannot put this char in non-disconnect state
+
 		SetDisconnected(pSector);
-        SetTopPoint(pt);
+        SetTopPoint(pt); // This will clear the disconnected UID flag and the set the character position in the world.
+		SetDisconnected(); //Before entering here the player is not considered disconnected anymore, so we need to disconnect it again.
 		return true;
 	}
 
@@ -4111,7 +4146,7 @@ bool CChar::IsTriggerActive(lpctstr trig) const
     if (_iRunningTriggerId != -1)
     {
         ASSERT(_iRunningTriggerId < CTRIG_QTY);
-        const int iAction = FindTableSorted( trig, CChar::sm_szTrigName, CountOf(CChar::sm_szTrigName)-1 );
+        const int iAction = FindTableSorted( trig, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName)-1 );
         return (_iRunningTriggerId == iAction);
     }
     ASSERT(!_sRunningTrigger.empty());
@@ -4126,11 +4161,11 @@ void CChar::SetTriggerActive(lpctstr trig)
         _sRunningTrigger.clear();
         return;
     }
-	const int iAction = FindTableSorted( trig, CChar::sm_szTrigName, CountOf(CChar::sm_szTrigName)-1 );
+	const int iAction = FindTableSorted( trig, CChar::sm_szTrigName, ARRAY_COUNT(CChar::sm_szTrigName)-1 );
     if (iAction != -1)
     {
         _iRunningTriggerId = (short)iAction;
-        _sRunningTrigger.clear();
+        _sRunningTrigger = CChar::sm_szTrigName[iAction];
         return;
     }
     _sRunningTrigger = trig;
@@ -4162,7 +4197,7 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CTextConsole * pSrc, CScript
     const CTRIG_TYPE iAction = (CTRIG_TYPE)_iRunningTriggerId;
     // Attach some trigger to the cchar. (PC or NPC)
     // RETURN: true = block further action.
-    TRIGRET_TYPE iRet = TRIGRET_RET_DEFAULT;
+    TRIGRET_TYPE iRet = TRIGRET_RET_ABORTED;
 
 	EXC_TRY("Trigger");
 
@@ -4170,7 +4205,7 @@ TRIGRET_TYPE CChar::OnTrigger( lpctstr pszTrigName, CTextConsole * pSrc, CScript
     {
 		tchar ptcCharTrigName[TRIGGER_NAME_MAX_LEN] = "@CHAR";
 		Str_ConcatLimitNull(ptcCharTrigName + 5, pszTrigName + 1, TRIGGER_NAME_MAX_LEN - 5);
-        const CTRIG_TYPE iCharAction = (CTRIG_TYPE)FindTableSorted(ptcCharTrigName, sm_szTrigName, CountOf(sm_szTrigName) - 1);
+        const CTRIG_TYPE iCharAction = (CTRIG_TYPE)FindTableSorted(ptcCharTrigName, sm_szTrigName, ARRAY_COUNT(sm_szTrigName) - 1);
         if ((iCharAction > XTRIG_UNKNOWN) && IsTrigUsed(ptcCharTrigName))
         {
             CChar* pChar = pSrc->GetChar();
@@ -4424,8 +4459,9 @@ void CChar::OnTickSkill()
     EXC_CATCHSUB("Skill tick");
 }
 
-bool CChar::_CanTick() const
+bool CChar::_CanTick(bool fParentGoingToSleep) const
 {
+	ADDTOCALLSTACK_INTENSIVE("CChar::_CanTick");
 	EXC_TRY("Can tick?");
 
 	if (IsDisconnected() && (Skill_GetActive() != NPCACT_RIDDEN))
@@ -4434,7 +4470,7 @@ bool CChar::_CanTick() const
 		return false;
 	}
 
-	return CObjBase::_CanTick();
+	return CObjBase::_CanTick(fParentGoingToSleep);
 
 	EXC_CATCH;
 
@@ -4480,12 +4516,16 @@ bool CChar::_OnTick()
 		// mounted horses can still get a tick.
 		return true;
 	}
-    if (GetTopSector()->IsSleeping() && !Calc_GetRandVal(15))
-    {
-        _SetTimeout(1);      //Make it tick after sector's awakening.
-        _GoSleep();
-        return true;
-    }
+	if (!_CanTick())
+	{
+		ASSERT(!_IsSleeping());
+		if (GetTopSector()->IsSleeping() && !Calc_GetRandVal(15))
+		{
+			_SetTimeout(1);      //Make it tick after sector's awakening.
+			_GoSleep();
+			return true;
+		}
+	}
 
 	EXC_SET_BLOCK("Components Tick");
 	/*
@@ -4592,7 +4632,13 @@ bool CChar::OnTickPeriodic()
         {
             StatFlag_Clear(STATF_FLY);
         }
-
+	// Show returning anim for thowing weapons after throw it
+	if ((pClient->m_timeLastSkillThrowing > 0) && ((iTimeCur - pClient->m_timeLastSkillThrowing) > (2 * MSECS_PER_TENTH)))
+	{
+		pClient->m_timeLastSkillThrowing = 0;
+		if (pClient->m_pSkillThrowingTarg->IsValidUID())
+			Effect(EFFECT_BOLT, pClient->m_SkillThrowingAnimID, pClient->m_pSkillThrowingTarg, 18, 1, false, pClient->m_SkillThrowingAnimHue, pClient->m_SkillThrowingAnimRender);
+	}
         // Check targeting timeout, if set
         if ((pClient->m_Targ_Timeout > 0) && ((iTimeCur - pClient->m_Targ_Timeout) > 0) )
         {

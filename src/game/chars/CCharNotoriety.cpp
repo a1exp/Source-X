@@ -210,6 +210,20 @@ NOTO_TYPE CChar::Noto_CalcFlag(const CChar * pCharViewer, bool fAllowIncog, bool
 					{
 						if (pViewerGuild && pViewerGuild->IsPrivMember(pCharViewer))
 						{
+							if (IsSetOF(OF_EnableGuildAlignNotoriety))
+							{
+								if (pViewerGuild->GetAlignType() != STONEALIGN_STANDARD)
+								{
+									if (pViewerGuild->GetAlignType() == pMyGuild->GetAlignType())
+									{
+										return NOTO_GUILD_SAME;
+									}
+										
+									return NOTO_GUILD_WAR;
+
+								}
+							}
+
 							if (pViewerGuild == pMyGuild) // Same guild?
 								return NOTO_GUILD_SAME; // return green
 							if (pMyGuild->IsAlliedWith(pViewerGuild))
@@ -270,7 +284,7 @@ HUE_TYPE CChar::Noto_GetHue(const CChar * pCharViewer, bool fIncog) const
 		pChar = this;
 	switch (color)
 	{
-	case NOTO_GOOD:			return (HUE_TYPE)(g_Cfg.m_iColorNotoGood);		// Blue
+	case NOTO_GOOD:			return pChar->IsNPC() ? (HUE_TYPE)(g_Cfg.m_iColorNotoGoodNPC) : (HUE_TYPE)(g_Cfg.m_iColorNotoGood);		// Blue
 	case NOTO_GUILD_SAME:	return (HUE_TYPE)(g_Cfg.m_iColorNotoGuildSame);	// Green (same guild)
 	case NOTO_NEUTRAL:		return (HUE_TYPE)(g_Cfg.m_iColorNotoNeutral);	// Grey (someone that can be attacked)
 	case NOTO_CRIMINAL:		return (HUE_TYPE)(g_Cfg.m_iColorNotoCriminal);	// Grey (criminal)
@@ -456,7 +470,7 @@ void CChar::Noto_ChangeNewMsg( int iPrvLevel )
 	}
 }
 
-void CChar::Noto_Fame( int iFameChange )
+void CChar::Noto_Fame( int iFameChange, CChar* pNPC )
 {
 	ADDTOCALLSTACK("CChar::Noto_Fame");
 
@@ -475,24 +489,25 @@ void CChar::Noto_Fame( int iFameChange )
 			iFameChange = -iFame;
 	}
 
-	if ( IsTrigUsed(TRIGGER_FAMECHANGE) )
-	{
-		CScriptTriggerArgs Args(iFameChange);	// ARGN1 - Fame change modifier
-		TRIGRET_TYPE retType = OnTrigger(CTRIG_FameChange, this, &Args);
+	// SetFame moved under the function.
+	//if ( IsTrigUsed(TRIGGER_FAMECHANGE) )
+	//{
+	//	CScriptTriggerArgs Args(iFameChange);	// ARGN1 - Fame change modifier
+	//	TRIGRET_TYPE retType = OnTrigger(CTRIG_FameChange, this, &Args);
 
-		if ( retType == TRIGRET_RET_TRUE )
-			return;
-		iFameChange = (int)(Args.m_iN1);
-	}
+	//	if ( retType == TRIGRET_RET_TRUE )
+	//		return;
+	//	iFameChange = (int)(Args.m_iN1);
+	//}
 
-	if ( ! iFameChange )
-		return;
+	//if ( ! iFameChange )
+	//	return;
 
-	SetFame((ushort)(iFame + iFameChange));
+	SetFame((ushort)(iFame + iFameChange), pNPC);
     Noto_ChangeDeltaMsg( (int)GetFame() - iFame, g_Cfg.GetDefaultMsg( DEFMSG_NOTO_FAME ) );
 }
 
-void CChar::Noto_Karma( int iKarmaChange, int iBottom, bool fMessage )
+void CChar::Noto_Karma( int iKarmaChange, int iBottom, bool fMessage, CChar* pNPC )
 {
 	ADDTOCALLSTACK("CChar::Noto_Karma");
 
@@ -512,20 +527,21 @@ void CChar::Noto_Karma( int iKarmaChange, int iBottom, bool fMessage )
 			iKarmaChange = iBottom - iKarma;
 	}
 
-	if ( IsTrigUsed(TRIGGER_KARMACHANGE) )
-	{
-		CScriptTriggerArgs Args(iKarmaChange);	// ARGN1 - Karma change modifier
-		TRIGRET_TYPE retType = OnTrigger(CTRIG_KarmaChange, this, &Args);
+	// SetKarma moved under the function.
+	//if ( IsTrigUsed(TRIGGER_KARMACHANGE) )
+	//{
+	//	CScriptTriggerArgs Args(iKarmaChange);	// ARGN1 - Karma change modifier
+	//	TRIGRET_TYPE retType = OnTrigger(CTRIG_KarmaChange, this, &Args);
 
-		if ( retType == TRIGRET_RET_TRUE )
-			return;
-		iKarmaChange = (int)(Args.m_iN1);
-	}
+	//	if ( retType == TRIGRET_RET_TRUE )
+	//		return;
+	//	iKarmaChange = (int)(Args.m_iN1);
+	//}
 
-	if ( ! iKarmaChange )
-		return;
+	//if ( ! iKarmaChange )
+	//	return;
 
-    SetKarma((short)(iKarma + iKarmaChange));
+    SetKarma((short)(iKarma + iKarmaChange), pNPC);
     Noto_ChangeDeltaMsg( (int)GetKarma() - iKarma, g_Cfg.GetDefaultMsg( DEFMSG_NOTO_KARMA ) );
 	NotoSave_Update();
 	if ( fMessage == true )
@@ -596,8 +612,9 @@ void CChar::Noto_Kill(CChar * pKill, int iTotalKillers)
 		return;
 
 	int iPrvLevel = Noto_GetLevel();	// store title before fame/karma changes to check if it got changed
-	Noto_Fame(g_Cfg.Calc_FameKill(pKill) / iTotalKillers);
-	Noto_Karma(g_Cfg.Calc_KarmaKill(pKill, NotoThem) / iTotalKillers);
+	
+    Noto_Fame(g_Cfg.Calc_FameKill(pKill) / iTotalKillers, pKill);
+    Noto_Karma(g_Cfg.Calc_KarmaKill(pKill, NotoThem) / iTotalKillers, INT32_MIN, false, pKill);
 
 	if ( g_Cfg.m_bExperienceSystem && (g_Cfg.m_iExperienceMode & EXP_MODE_RAISE_COMBAT) )
 	{

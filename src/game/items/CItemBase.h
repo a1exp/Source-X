@@ -52,7 +52,10 @@ public:
 		// IT_WAND
 		// IT_WEAPON_*
 		// IT_ARMOR
+		// IT_ARMOR_BONE
+		// IT_ARMOR_CHAIN
 		// IT_ARMOR_LEATHER
+		// IT_ARMOR_RING
 		// IT_SHIELD
 		// IT_CLOTHING
 		// IT_SPELLBOOK
@@ -271,7 +274,7 @@ public:
 	}
     void SetType(IT_TYPE type);
 
-	void SetTypeName( lpctstr pszName );
+	virtual void SetTypeName( lpctstr pszName ) override;
 
 	LAYER_TYPE GetEquipLayer() const
 	{
@@ -279,7 +282,7 @@ public:
 		return (LAYER_TYPE)m_layer;
 	}
 
-	lpctstr GetName() const;
+	virtual lpctstr GetName() const override;
 	lpctstr GetArticleAndSpace() const;
 
 	ITEMID_TYPE GetID() const noexcept

@@ -6,14 +6,14 @@
 #ifndef _INC_CITEM_H
 #define _INC_CITEM_H
 
-#include "../resource/CResourceBase.h"
+#include "../../common/resource/CResourceBase.h"
+#include "../../common/CServerMap.h"
+#include "../../common/CRect.h"
 #include "../components/CCFaction.h"
 #include "../CServerTime.h"
 #include "../CBase.h"
-#include "../CRect.h"
 #include "../CObjBase.h"
 #include "../CObjBaseTemplate.h"
-#include "../CServerMap.h"
 #include "../game_enums.h"
 #include "../game_macros.h"
 #include "../CServerConfig.h"
@@ -30,6 +30,7 @@ enum ITC_TYPE	// Item Template commands
 	ITC_BUY,
 	ITC_CONTAINER,
 	ITC_FULLINTERP,
+	ITC_FUNC,
 	ITC_ITEM,
 	ITC_ITEMNEWBIE,
 	ITC_NEWBIESWAP,
@@ -187,8 +188,11 @@ public:
 		} m_itWeapon;
 
 		// IT_ARMOR
+		// IT_ARMOR_CHAIN
 		// IT_ARMOR_LEATHER
-		// IT_SHIELD:
+		// IT_ARMOR_RING
+		// IT_ARMOR_BONE
+		// IT_SHIELD
 		// IT_CLOTHING
 		// IT_JEWELRY
 		struct
@@ -566,26 +570,35 @@ protected:
 public:
 	virtual bool _OnTick() override;
 
+	virtual bool _CanTick(bool fParentGoingToSleep = false) const override;
+	//virtual bool  CanTick(bool fParentGoingToSleep = false) const override;   // Not needed: the right virtual is called by CTimedObj::_CanTick.
+	bool _CanHoldTimer() const;
+
 public:
 	virtual void OnHear( lpctstr pszCmd, CChar * pSrc );
+
 	CItemBase * Item_GetDef() const;
+
 	ITEMID_TYPE GetID() const;
-    inline word GetBaseID() const {
+    inline virtual word GetBaseID() const override {
         return (word)GetID();
     }
+	inline ITEMID_TYPE GetDispID() const noexcept {
+		// This is what the item looks like.
+		// May not be the same as the item that defines it's type.
+		return m_dwDispIndex;
+	}
+
 	bool SetBaseID( ITEMID_TYPE id );
 	bool SetID( ITEMID_TYPE id );
-    inline ITEMID_TYPE GetDispID() const noexcept {
-        // This is what the item looks like.
-        // May not be the same as the item that defines it's type.
-        return m_dwDispIndex;
-    }
+
 	bool IsSameDispID( ITEMID_TYPE id ) const;	// account for flipped types ?
 	bool SetDispID( ITEMID_TYPE id );
 	void SetAnim( ITEMID_TYPE id, int64 iTicksTimeout); // time in ticks
 
-	int IsWeird() const;
-	char GetFixZ(CPointMap pt, dword dwBlockFlags = 0 );
+	virtual int IsWeird() const override;
+	char GetFixZ(CPointMap pt, dword dwBlockFlags = 0);
+
 	CCFaction* GetSlayer() const;
 	byte GetSpeed() const;
 
@@ -638,6 +651,7 @@ public:
 	}
 
 	height_t GetHeight() const;
+
 	int64  GetDecayTime() const;
 	void SetDecayTime(int64 iMsecsTimeout, bool fOverrideAlways = false);
     void SetDecayTimeD(int64 iTenthsTimeout, bool fOverrideAlways = false)
@@ -648,11 +662,12 @@ public:
     {
         SetDecayTime(iSecondsTimeout * MSECS_PER_SEC, fOverrideAlways);
     }
+
 	SOUND_TYPE GetDropSound( const CObjBase * pObjOn ) const;
 	bool IsTopLevelMultiLocked() const;
 	bool IsMovableType() const;
 	bool IsMovable() const;
-	int GetVisualRange() const;
+	virtual int GetVisualRange() const override;
 
 	bool IsStackableException() const;
 	bool IsStackable( const CItem * pItem ) const;
@@ -678,17 +693,19 @@ public:
     CREID_TYPE GetCorpseType() const;
     void  SetCorpseType( CREID_TYPE id );
 
-	lpctstr GetName() const;	// allowed to be default name.
+	virtual lpctstr GetName() const override;	// allowed to be default name.
 	lpctstr GetNameFull( bool fIdentified ) const;
-	virtual bool SetName( lpctstr pszName );
+	virtual bool SetName( lpctstr pszName ) override;
 
-	virtual int GetWeight(word amount = 0) const;
+	virtual int GetWeight(word amount = 0) const override;
 
 protected:	virtual void _SetTimeout(int64 iMsecs) override final;
 
 public:
-	virtual void OnMoveFrom() {};	// Moving from current location.
-	virtual bool MoveTo(const CPointMap& pt, bool fForceFix = false); // Put item on the ground here.
+	virtual void OnMoveFrom()   // Moving from current location.
+    {
+    }
+	virtual bool MoveTo(const CPointMap& pt, bool fForceFix = false) override; // Put item on the ground here.
 	bool MoveToUpdate(const CPointMap& pt, bool fForceFix = false);
 	bool MoveToDecay(const CPointMap & pt, int64 iMsecsTimeout, bool fForceFix = false);
 	bool MoveToCheck(const CPointMap & pt, CChar * pCharMover = nullptr );
@@ -701,11 +718,15 @@ public:
 	CItem * GetTopContainer();
 	const CItem* GetTopContainer() const;
 
-	uchar GetContainedGridIndex() const;
-	void SetContainedGridIndex(uchar index);
+	uchar GetContainedGridIndex() const {
+		return m_containedGridIndex;
+	}
+	void SetContainedGridIndex(uchar index) {
+		m_containedGridIndex = index;
+	}
 
-	void Update( const CClient * pClientExclude = nullptr );		// send this new item to everyone.
-	void Flip();
+	virtual void Update( const CClient * pClientExclude = nullptr ) override;	// send this new item to everyone.
+	virtual void Flip() override;
 	bool LoadSetContainer( const CUID& uid, LAYER_TYPE layer );
 
 	void WriteUOX( CScript & s, int index );
@@ -736,7 +757,7 @@ public:
     */
     void SetTriggerActive(lpctstr trig = nullptr);
 
-	TRIGRET_TYPE OnTrigger( lpctstr pszTrigName, CTextConsole * pSrc, CScriptTriggerArgs * pArgs );
+	virtual TRIGRET_TYPE OnTrigger( lpctstr pszTrigName, CTextConsole * pSrc, CScriptTriggerArgs * pArgs ) override;
 	TRIGRET_TYPE OnTrigger( ITRIG_TYPE trigger, CTextConsole * pSrc, CScriptTriggerArgs * pArgs = nullptr );
 
 	// Item type specific stuff.
@@ -759,7 +780,7 @@ public:
 	bool IsTypeSpellable() const;
     bool IsTypeEquippable() const;
 
-	bool IsResourceMatch( const CResourceID& rid, dword dwArg ) const;
+	virtual bool IsResourceMatch( const CResourceID& rid, dword dwArg ) const override;
 
 	bool IsValidLockLink( CItem * pItemLock ) const;
 	bool IsValidLockUID() const;
@@ -795,7 +816,7 @@ public:
 	bool IsBookSystem() const;
 
 	void OnExplosion();
-	bool OnSpellEffect( SPELL_TYPE spell, CChar * pCharSrc, int iSkillLevel, CItem * pSourceItem, bool bReflecting = false );
+	virtual bool OnSpellEffect( SPELL_TYPE spell, CChar * pCharSrc, int iSkillLevel, CItem * pSourceItem, bool bReflecting = false, int64 iDuration = 0) override;
 	int OnTakeDamage( int iDmg, CChar * pSrc, DAMAGE_TYPE uType = DAMAGE_HIT_BLUNT );
 
 	int Armor_GetRepairPercent() const;
@@ -819,7 +840,7 @@ public:
 	void Plant_CropReset();
 	bool Plant_Use( CChar * pChar );
 
-	virtual void DupeCopy( const CItem * pItem );
+	virtual void DupeCopy( const CObjBase * pItem ) override;
 	CItem * UnStackSplit( word amount, CChar * pCharSrc = nullptr );
 
 	static CItem * CreateBase( ITEMID_TYPE id, IT_TYPE type = IT_INVALID ); // If type == IT_INVALID, read the type from the def (default behaviour)
