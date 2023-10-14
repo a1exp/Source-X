@@ -331,7 +331,8 @@ enum DIR_TYPE	// Walking directions. m_dir
     DIR_NW,
     DIR_QTY,		// Also means "Center"
 
-    DIR_ANIM_QTY = 5	// Seems we only need 5 pics for an anim, assume ALL bi-symetrical creatures
+    DIR_ANIM_QTY = 5,	// Seems we only need 5 pics for an anim, assume ALL bi-symetrical creatures
+    DIR_MASK_RUNNING = 0x80
 };
 
 
@@ -1002,7 +1003,7 @@ enum
 
     TERRAIN_NULL	= 0x0244,	// impassible interdungeon
 
-    TERRAIN_QTY     = 0x4000	// Terrain tile qyt
+    TERRAIN_QTY     = 0x4000	// Terrain tile qty
 };
 
 

@@ -95,7 +95,7 @@ bool CItemContainer::r_GetRef( lpctstr &ptcKey, CScriptObj *&pRef )
 
 bool CItemContainer::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole *pSrc, bool fNoCallParent, bool fNoCallChildren )
 {
-    UNREFERENCED_PARAMETER(fNoCallChildren);
+    UnreferencedParameter(fNoCallChildren);
 	ADDTOCALLSTACK("CItemContainer::r_WriteVal");
 
 	EXC_TRY("WriteVal");
@@ -486,7 +486,7 @@ CPointMap CItemContainer::GetRandContainerLoc() const
 	{
 		for (; ; ++i)
 		{
-			if (i >= CountOf(sm_ContSize))
+			if (i >= ARRAY_COUNT(sm_ContSize))
 			{
 				i = 0;	// set to default
 				g_Log.EventWarn("Unknown container gump id %d for 0%x\n", gump, GetDispID());
@@ -586,7 +586,7 @@ void CItemContainer::ContentAdd( CItem *pItem, CPointMap pt, bool bForceNoStack,
 
     // Try drop it on given container grid index (if not available, drop it on next free index)
 	{
-		bool fGridCellUsed[UCHAR_MAX] {false};
+		bool fGridCellUsed[UCHAR_MAX + 1] {false};
 		for (const CSObjContRec* pObjRec : *this)
 		{
 			const CItem* pTry = static_cast<const CItem*>(pObjRec);
@@ -600,7 +600,7 @@ void CItemContainer::ContentAdd( CItem *pItem, CPointMap pt, bool bForceNoStack,
 		if (fGridCellUsed[gridIndex])
 		{
 			gridIndex = 0;
-			for (uint i = 0; i < UCHAR_MAX; ++i)
+			for (uint i = 0; (i < UCHAR_MAX) && (gridIndex < UCHAR_MAX); ++i)
 			{
 				if (!fGridCellUsed[i])
 					break;
@@ -768,10 +768,12 @@ void CItemContainer::_GoSleep()
 	CItem::_GoSleep();
 }
 
-void CItemContainer::DupeCopy( const CItem *pItem )
+void CItemContainer::DupeCopy( const CObjBase *pItemObj )
 {
 	ADDTOCALLSTACK("CItemContainer::DupeCopy");
 	// Copy the contents of this item.
+    auto pItem = dynamic_cast<const CItem*>(pItemObj);
+    ASSERT(pItem);
 
 	CItemVendable::DupeCopy(pItem);
 
@@ -814,8 +816,8 @@ void CItemContainer::SetKeyRing()
 	};
 
 	size_t iQty = GetContentCount();
-	if ( iQty >= CountOf(sm_Item_Keyrings) )
-		iQty = CountOf(sm_Item_Keyrings) - 1;
+	if ( iQty >= ARRAY_COUNT(sm_Item_Keyrings) )
+		iQty = ARRAY_COUNT(sm_Item_Keyrings) - 1;
 
 	ITEMID_TYPE id = sm_Item_Keyrings[iQty];
 	if ( id != GetID() )
@@ -833,28 +835,25 @@ bool CItemContainer::CanContainerHold( const CItem *pItem, const CChar *pCharMsg
 	if ( pCharMsg->IsPriv(PRIV_GM) )	// a gm can doing anything.
 		return true;
 
-	if ( IsAttr(ATTR_MAGIC) )
-	{
-		// Put stuff in a magic box
-		pCharMsg->SysMessageDefault(DEFMSG_CONT_MAGIC);
-		return false;
-	}
-
 	size_t pTagTmp = (size_t)(GetKeyNum("OVERRIDE.MAXITEMS"));
-	size_t tMaxItemsCont = pTagTmp ? pTagTmp : g_Cfg.m_iContainerMaxItems;
-	if ( GetContentCount() >= tMaxItemsCont )
+	size_t iMaxItemsCont = pTagTmp ? pTagTmp : g_Cfg.m_iContainerMaxItems;
+	if ( GetContentCount() >= iMaxItemsCont )
 	{
-		pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL);
+		pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_ITEMS);
 		return false;
 	}
-
-	if (m_ModMaxWeight)
+	// The player backpack should be check differently because an ini setting can limit the weight player can have on it.
+	// If setting = -1:illimited other value should be add to char maxweight
+	int iMaxWeight = m_ModMaxWeight;
+	if ((GetContainedLayer() == LAYER_PACK) && !(g_Cfg.m_iBackpackOverload <= -1))
 	{
-		if ( (GetTotalWeight() + pItem->GetWeight()) > m_ModMaxWeight )
-		{
-			pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_WEIGHT);
-			return false;
-		}
+		CChar* pCharContainerOwner = static_cast<CChar*>(GetContainer()); // Owner of the container
+		iMaxWeight += (g_Cfg.Calc_MaxCarryWeight(pCharContainerOwner) + g_Cfg.m_iBackpackOverload);
+	}
+	if (iMaxWeight > 0 && (GetTotalWeight() + pItem->GetWeight() > iMaxWeight))
+	{
+		pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_WEIGHT);
+		return false;
 	}
 
 	if ( !IsSetOF(OF_AllowContainerInsideContainer) &&
@@ -955,7 +954,7 @@ bool CItemContainer::CanContainerHold( const CItem *pItem, const CChar *pCharMsg
 			// Check that this vendor box hasn't already reached its content limit
 			if ( GetContentCount() >= g_Cfg.m_iContainerMaxItems )
 			{
-				pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL);
+				pCharMsg->SysMessageDefault(DEFMSG_CONT_FULL_ITEMS);
 				return false;
 			}
 			break;
@@ -1179,7 +1178,7 @@ void CItemContainer::Game_Create()
 
 	if ( m_itGameBoard.m_GameType == 0 )	// Chess
 	{
-		for ( size_t i = 0; i < CountOf(sm_Item_ChessPieces); ++i )
+		for ( size_t i = 0; i < ARRAY_COUNT(sm_Item_ChessPieces); ++i )
 		{
 			// Add all it's pieces. (if not already added)
 			CItem *pPiece = CItem::CreateBase(sm_Item_ChessPieces[i]);
@@ -1277,7 +1276,7 @@ bool CItemContainer::r_Verb( CScript &s, CTextConsole *pSrc )
 	ADDTOCALLSTACK("CItemContainer::r_Verb");
 	EXC_TRY("Verb");
 	ASSERT(pSrc);
-	switch ( FindTableSorted(s.GetKey(), sm_szVerbKeys, CountOf(sm_szVerbKeys) - 1) )
+	switch ( FindTableSorted(s.GetKey(), sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys) - 1) )
 	{
 		case ICV_DELETE:
 			if ( s.HasArgs() )

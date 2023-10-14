@@ -34,6 +34,7 @@
 lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 {
 	"@AAAUNUSED",
+    "@AddMulti",            // Adding a multi to the MultiStorage,
 	"@AfterClick",
 	"@Attack",				// I am attacking someone (SRC)
 	"@CallGuards",
@@ -45,6 +46,7 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@charContextMenuRequest",
 	"@charContextMenuSelect",
 	"@charDClick",
+	"@charShove",
 	"@charTradeAccepted",
 
 	"@Click",				// I got clicked on by someone.
@@ -62,6 +64,7 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@DClick",				// Someone has dclicked on me.
 	"@Death",				//+I just got killed.
 	"@DeathCorpse",
+    "@DelMulti",            // Removing a multi to the MultiStorage,
 	"@Destroy",				//+I am nearly destroyed
 	"@Dismount",			// I am trying to get rid of my ride right now
 	"@Dye",					// My color has been changed
@@ -69,7 +72,8 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@EnvironChange",		// my environment changed somehow (light,weather,season,region)
 	"@ExpChange",			// EXP is going to change
 	"@ExpLevelChange",		// Experience LEVEL is going to change
-	"@FameChange",				// Fame changed
+	"@Falling",				//char is falling from height >= 10
+	"@FameChange",			// Fame is changing
 	"@FollowersUpdate",
 
 	"@GetHit",				// I just got hit.
@@ -125,8 +129,8 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@itemUNEQUIP",			// i have unequipped (or try to unequip) an item
 
 	"@Jailed",
-	"@KarmaChange",				// Karma chaged
-	"@Kill",				//+I have just killed someone
+	"@KarmaChange",         // Karma is changing
+	"@Kill",				// +I have just killed someone
 	"@LogIn",				// Client logs in
 	"@LogOut",				// Client logs out (21)
 	"@Mount",				// I'm trying to mount my horse (or whatever)
@@ -135,7 +139,8 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@NotoSend",			// Sending notoriety
 
 	"@NPCAcceptItem",		// (NPC only) i've been given an item i like (according to DESIRES)
-	"@NPCActFight",
+	"@NPCActCast",			// (NPC only) I decided to cast a spell.
+	"@NPCActFight",			// (NPC only) I have to fight against my target.
 	"@NPCActFollow",		// (NPC only) following someone right now
 	"@NPCAction",
 	"@NPCActWander",		// (NPC only) i'm wandering aimlessly
@@ -150,13 +155,14 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@NPCSeeWantItem",		// (NPC only) i see something good.
 	"@NPCSpecialAction",	// Idle
 
+    "@PartyAdd",            // Player joined the party.
 	"@PartyDisband",		//I just disbanded my party
 	"@PartyInvite",			//SRC invited me to join a party, so I may chose
 	"@PartyLeave",
 	"@PartyRemove",			//I have ben removed from the party by SRC
 
-    "@PayGold",             // I'm going to give out money for a service (Skill Training, hiring...).
-	"@PersonalSpace",		// +i just got stepped on.
+	"@PayGold",             // I'm going to give out money for a service (Skill Training, hiring...).
+	"@PersonalSpace",		// +i just got stepped on by other char.
 	"@PetDesert",			// I just went wild again
 	"@Profile",				// someone hit the profile button for me.
 	"@ReceiveItem",			// I was just handed an item (Not yet checked if i want it)
@@ -172,6 +178,7 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@SeeCrime",			// I saw a crime
 	"@SeeHidden",			// Can I see hidden chars?
 	"@SeeSnoop",
+	"@SendPaperdoll",		//Server send paperdollpacket
 
 	// SKTRIG_QTY
 	"@SkillAbort",
@@ -196,6 +203,7 @@ lpctstr const CChar::sm_szTrigName[CTRIG_QTY+1] =	// static
 	"@SpellEffectRemove",   // A spell memory item is going to be removed from me.
     "@SpellEffectTick",		// A spell is going to tick and have an effect on me.
 	"@SpellFail",			// The spell failed
+	"@SpellInterrupt",		// The spell was interrupted
 	"@SpellSelect",			// Selected a spell
 	"@SpellSuccess",		// The spell succeeded
 	"@SpellTargetCancel",	// cancelled spell target
@@ -312,9 +320,7 @@ CChar::CChar( CREID_TYPE baseID ) :
     // SubscribeComponent Prop Components
 	TrySubscribeComponentProps<CCPropsChar>();
 	TrySubscribeComponentProps<CCPropsItemChar>();
-
-    // SubscribeComponent regular Components
-    SubscribeComponent(new CCFaction());
+	SubscribeComponent(new CCFaction(pCharDef->GetFaction()));
 
 	ASSERT(IsDisconnected());
 }
@@ -339,8 +345,8 @@ CChar::~CChar()
         m_pParty->RemoveMember( GetUID(), GetUID() );
         m_pParty = nullptr;
     }
-    Guild_Resign(MEMORY_GUILD);
-    Guild_Resign(MEMORY_TOWN);
+    //Guild_Resign(MEMORY_GUILD); Moved to the ClearPlayer method otherwise it will cause a server crash because the deleted player will still be found in the guild list.
+    //Guild_Resign(MEMORY_TOWN);  Moved to the ClearPlayer method otherwise it will cause a server crash because the deleted player will still be found in the guild list.
     Attacker_RemoveChar();		// Removing me from enemy's attacker list (I asume that if he is on my list, I'm on his one and no one have me on their list if I dont have them)
     if (m_pNPC)
         NPC_PetClearOwners();	// Clear follower slots on pet owner
@@ -380,7 +386,7 @@ void CChar::DeleteCleanup(bool fForce)
 
 // Called before Delete()
 // @Destroy or f_onchar_delete can prevent the deletion
-bool CChar::NotifyDelete()
+bool CChar::NotifyDelete(bool fForce)
 {
 	ADDTOCALLSTACK("CChar::NotifyDelete");
 	if (IsDeleted())
@@ -390,21 +396,24 @@ bool CChar::NotifyDelete()
 	if (IsTrigUsed(TRIGGER_DESTROY))
 	{
 		//We can forbid the deletion in here with no pain
-		if (CChar::OnTrigger(CTRIG_Destroy, &g_Serv) == TRIGRET_RET_TRUE)
+		//If Delete is forced, we must avoid the possibility to block deletion (will create infinite loop)
+		if (CChar::OnTrigger(CTRIG_Destroy, &g_Serv) == TRIGRET_RET_TRUE && !fForce)
 			return false;
 	}
 
 	// If this is a player, check for f_onchar_delete
-	if (m_pClient)
+	if (m_pPlayer)
 	{
 		TRIGRET_TYPE trigReturn;
 		CScriptTriggerArgs Args;
-		Args.m_pO1 = m_pClient;
+		if (m_pClient)
+			Args.m_pO1 = m_pClient;
 		r_Call("f_onchar_delete", this, &Args, nullptr, &trigReturn);
-		if (trigReturn == TRIGRET_RET_TRUE)
+		//If Delete is forced, we must avoid the possibility to block deletion (will create infinite loop)
+		if (trigReturn == TRIGRET_RET_TRUE && !fForce)
 			return false;
 	}
-	
+
 	// Clear follower slots on pet owner
 	if (m_pNPC)
 		NPC_PetClearOwners();
@@ -424,7 +433,7 @@ bool CChar::Delete(bool fForce)
 {
 	ADDTOCALLSTACK("CChar::Delete");
 
-	if ((NotifyDelete() == false) && !fForce)
+	if ((NotifyDelete(fForce) == false) && !fForce)
 		return false;
 
 	// Character has been deleted
@@ -434,8 +443,11 @@ bool CChar::Delete(bool fForce)
 		pClient->CharDisconnect();
 		pClient->GetNetState()->markReadClosed();
 	}
-	
+
 	DeleteCleanup(fForce);	// not virtual
+
+	if (m_pPlayer && fForce)
+		ClearPlayer();
 
 	return CObjBase::Delete();
 }
@@ -518,7 +530,9 @@ void CChar::SetDisconnected(CSector* pNewSector)
         return;
 
 	// If the char goes offline, we don't want its items to tick anymore when the timer expires.
-	_GoSleep();
+	// Unless it's a summoned creature that we are riding.
+	if (!IsStatFlag(STATF_RIDDEN|STATF_CONJURED|STATF_PET))
+		_GoSleep();
 
     RemoveFromView();	// Remove from views.
     MoveToRegion(nullptr, false);
@@ -526,12 +540,20 @@ void CChar::SetDisconnected(CSector* pNewSector)
 	CSector* pCurSector = GetTopPoint().GetSector();
 	if (pNewSector && (pNewSector != pCurSector))
 	{
-		pNewSector->m_Chars_Disconnect.AddCharDisconnected(this);
+		if (!pNewSector->IsCharDisconnectedIn(this))
+			pNewSector->m_Chars_Disconnect.AddCharDisconnected(this);
+		else
+			SetUIDContainerFlags(UID_O_DISCONNECT);
 	}
 	else
 	{
 		ASSERT(pCurSector);
-		pCurSector->m_Chars_Disconnect.AddCharDisconnected(this);
+		if (!pCurSector->IsCharDisconnectedIn(this)) //This is necessary otherwise the character will be added another time and causing an error
+			pCurSector->m_Chars_Disconnect.AddCharDisconnected(this);
+		else
+			SetUIDContainerFlags(UID_O_DISCONNECT);
+
+		IsDisconnected();
 	}
 }
 
@@ -550,12 +572,13 @@ void CChar::ClearPlayer()
 	{
 		if (g_Serv.GetServerMode() != SERVMODE_Exiting)
 		{
-			g_Log.EventWarn("Player delete '%s' name from account '%s'.\n", GetName(), pAccount->GetName());
+			g_Log.EventWarn("Character '%s'(UID 0%x) on account '%s' as been deleted.\n", GetName(), (dword)GetUID(), pAccount->GetName());
 		}
 
 		pAccount->DetachChar(this);	// unlink me from my account.
 	}
-    
+	Guild_Resign(MEMORY_GUILD);
+	Guild_Resign(MEMORY_TOWN);
     delete m_pPlayer;
     m_pPlayer = nullptr;
 }
@@ -691,7 +714,7 @@ char CChar::GetFixZ( const CPointMap& pt, dword dwBlockFlags)
 
 	if ( !dwBlockFlags )
 		dwBlockFlags = dwCanMoveFlags;
-	
+
     if (dwCanMoveFlags == 0xFFFFFFFF)
         return pt.m_z;
 	if (dwCanMoveFlags & CAN_C_WALK )
@@ -807,7 +830,7 @@ void CChar::StatFlag_Mod(uint64 uiStatFlag, bool fMod) noexcept
 }
 
 bool CChar::IsPriv( word flag ) const
-{	
+{
 	// PRIV_GM flags
 	if ( m_pPlayer == nullptr )
 		return false;	// NPC's have no privs.
@@ -1215,7 +1238,7 @@ bool CChar::DupeFrom(const CChar * pChar, bool fNewbieItems )
 				const short iFollowerSlots = (short)GetDefNum("FOLLOWERSLOTS", true, 1);
 				//If we have reached the maximum follower slots we remove the ownership of the pet by clearing the memory flag instead of using NPC_PetClearOwners().
 				if (!pTest3->FollowersUpdate(this, maximum(0, iFollowerSlots)))
-					Memory_ClearTypes(MEMORY_IPET); 
+					Memory_ClearTypes(MEMORY_IPET);
 			}
 		}
 	}
@@ -1254,17 +1277,41 @@ bool CChar::ReadScriptReduced(CResourceLock &s, bool fVendor)
 {
 	ADDTOCALLSTACK("CChar::ReadScriptReduced");
 	bool fFullInterp = false;
-	bool fBlockItemAttr = false; //Set a temporary boolean to block item attributes to set on Character.
 
+	bool fBlockItemAttr = false; // Set a temporary boolean to block item attributes to set on Character.
 	CItem * pItem = nullptr;
 	while ( s.ReadKeyParse() )
 	{
 		if ( s.IsKeyHead("ON", 2) )
 			break;
 
-		int iCmd = FindTableSorted(s.GetKey(), CItem::sm_szTemplateTable, CountOf(CItem::sm_szTemplateTable)-1);
-		bool fItemCreation = false;
-		if ( fVendor )
+		bool fItemCreated = false;	// With the current keyword, have i created an item?
+		int iCmd = FindTableSorted(s.GetKey(), CItem::sm_szTemplateTable, ARRAY_COUNT(CItem::sm_szTemplateTable)-1);
+		if (iCmd == ITC_FUNC)
+		{
+			if (!pItem || fBlockItemAttr)
+				continue;
+
+			lptstr ptcFunctionName = s.GetArgRaw();
+			std::unique_ptr<CScriptTriggerArgs> pScriptArgs;
+			// Locate arguments for the called function
+			tchar* ptcArgs = strchr(ptcFunctionName, ' ');
+			if (ptcArgs)
+			{
+				*ptcArgs = 0;
+				++ptcArgs;
+				GETNONWHITESPACE(ptcArgs);
+				pScriptArgs = std::make_unique<CScriptTriggerArgs>(ptcArgs);
+			}
+			pItem->r_Call(ptcFunctionName, this, pScriptArgs.get());
+			if (pItem->IsDeleted())
+			{
+				pItem = nullptr;
+				//g_Log.EventDebug("FUNC deleted the item.\n");
+			}
+			continue;
+		}
+		else if ( fVendor )
 		{
 			if (iCmd != -1)
 			{
@@ -1274,7 +1321,7 @@ bool CChar::ReadScriptReduced(CResourceLock &s, bool fVendor)
 					case ITC_SELL:
 					{
 						fBlockItemAttr = false; //Make sure we reset the value, if the last input is not a ITEM(NEWBIE) or CONTAINER.
-						CItemContainer * pCont = GetBank((iCmd == ITC_SELL) ? LAYER_VENDOR_STOCK : LAYER_VENDOR_BUYS );
+						CItemContainer * pCont = GetBank((iCmd == ITC_SELL) ? LAYER_VENDOR_STOCK : LAYER_VENDOR_BUYS);
 						if ( pCont )
 						{
 							pItem = CItem::CreateHeader(s.GetArgRaw(), pCont, false);
@@ -1284,9 +1331,10 @@ bool CChar::ReadScriptReduced(CResourceLock &s, bool fVendor)
 						pItem = nullptr;
 						continue;
 					}
+					//case ITC_BREAK:	// I don't find a use case for that...
 					case ITC_ITEM:
 					case ITC_CONTAINER:
-					case ITC_ITEMNEWBIE:					
+					case ITC_ITEMNEWBIE:
 						fBlockItemAttr = true; //Set the value to block next Color or Attribute inputs for items.
 						pItem = nullptr;
 						continue;
@@ -1299,66 +1347,67 @@ bool CChar::ReadScriptReduced(CResourceLock &s, bool fVendor)
 		}
 		else
 		{
-			switch ( iCmd )
-			{
+            switch (iCmd)
+            {
 				case ITC_FULLINTERP:
-					{
-						lpctstr	pszArgs	= s.GetArgStr();
-						GETNONWHITESPACE(pszArgs);
-						fFullInterp = ( *pszArgs == '\0' ) ? true : ( s.GetArgVal() != 0);
-						continue;
-					}
+				{
+					lpctstr	pszArgs = s.GetArgStr();
+					GETNONWHITESPACE(pszArgs);
+					fFullInterp = (*pszArgs == '\0') ? true : (s.GetArgVal() != 0);
+					continue;
+				}
 				case ITC_NEWBIESWAP:
-					{
-						if ( !pItem )
-							continue;
-
-						if ( pItem->IsAttr( ATTR_NEWBIE ) )
-						{
-							if ( Calc_GetRandVal( s.GetArgVal() ) == 0 )
-								pItem->ClrAttr(ATTR_NEWBIE);
-						}
-						else
-						{
-							if ( Calc_GetRandVal( s.GetArgVal() ) == 0 )
-								pItem->SetAttr(ATTR_NEWBIE);
-						}
+				{
+					if (!pItem)
 						continue;
+
+					if (pItem->IsAttr(ATTR_NEWBIE))
+					{
+						if (Calc_GetRandVal(s.GetArgVal()) == 0)
+							pItem->ClrAttr(ATTR_NEWBIE);
 					}
+					else
+					{
+						if (Calc_GetRandVal(s.GetArgVal()) == 0)
+							pItem->SetAttr(ATTR_NEWBIE);
+					}
+					continue;
+				}
 				case ITC_ITEM:
 				case ITC_CONTAINER:
 				case ITC_ITEMNEWBIE:
+				{
+					fBlockItemAttr = false;
+					fItemCreated = true;
+
+					if (IsStatFlag(STATF_CONJURED) && iCmd != ITC_ITEMNEWBIE) // This check is not needed (sure?).
+						break; // conjured creates have no loot.
+
+					pItem = CItem::CreateHeader(s.GetArgRaw(), this, iCmd == ITC_ITEMNEWBIE);
+					if (pItem == nullptr)
 					{
-						fItemCreation = true;
-
-						if ( IsStatFlag( STATF_CONJURED ) && iCmd != ITC_ITEMNEWBIE ) // This check is not needed.
-							break; // conjured creates have no loot.
-
-						pItem = CItem::CreateHeader( s.GetArgRaw(), this, iCmd == ITC_ITEMNEWBIE );
-						if ( pItem == nullptr )
-						{
-							m_UIDLastNewItem = GetUID();	// Setting m_UIDLastNewItem to CChar's UID to prevent calling any following functions meant to be called on that item
-							continue;
-						}
-						m_UIDLastNewItem.InitUID();	//Clearing the attr for the next cycle
-
-						pItem->_iCreatedResScriptIdx = s.m_iResourceFileIndex;
-						pItem->_iCreatedResScriptLine = s.m_iLineNum;
-
-						if ( iCmd == ITC_ITEMNEWBIE )
-							pItem->SetAttr(ATTR_NEWBIE);
-
-						if ( !pItem->IsItemInContainer() && !pItem->IsItemEquipped())
-							pItem = nullptr;
+						m_UIDLastNewItem = GetUID();	// Setting m_UIDLastNewItem to CChar's UID to prevent calling any following functions meant to be called on that item
 						continue;
 					}
+					m_UIDLastNewItem.InitUID();	//Clearing the attr for the next cycle
+
+					pItem->_iCreatedResScriptIdx = s.m_iResourceFileIndex;
+					pItem->_iCreatedResScriptLine = s.m_iLineNum;
+
+					if (iCmd == ITC_ITEMNEWBIE)
+						pItem->SetAttr(ATTR_NEWBIE);
+
+					if (!pItem->IsItemInContainer() && !pItem->IsItemEquipped())
+						pItem = nullptr;
+					continue;
+				}
 
 				case ITC_BREAK:
 				case ITC_BUY:
 				case ITC_SELL:
 					pItem = nullptr;
 					continue;
-			}
+				}
 
 		}
 
@@ -1366,7 +1415,7 @@ bool CChar::ReadScriptReduced(CResourceLock &s, bool fVendor)
 			continue;
 		if ( fBlockItemAttr ) //Did we force to cancel item attributes?
 			continue;
-			
+
 		if ( pItem != nullptr )
 		{
 			if ( fFullInterp )	// Modify the item.
@@ -1374,10 +1423,11 @@ bool CChar::ReadScriptReduced(CResourceLock &s, bool fVendor)
 			else
 				pItem->r_LoadVal( s );
 		}
-		else if (!fItemCreation)
+		else if (!fItemCreated)
 		{
+			// I'm setting an attribute to myself, not the item (e.g. @Create trigger). Run that script line.
 			TRIGRET_TYPE tRet = OnTriggerRun( s, TRIGRUN_SINGLE_EXEC, &g_Serv, nullptr, nullptr );
-			if ( (tRet == TRIGRET_RET_FALSE) && fFullInterp )
+			if ((tRet == TRIGRET_RET_FALSE) && fFullInterp)
 				;
 			else if ( tRet != TRIGRET_RET_DEFAULT )
 			{
@@ -1399,7 +1449,7 @@ void CChar::OnWeightChange( int iChange )
 
 int CChar::GetWeight(word amount) const
 {
-	UNREFERENCED_PARAMETER(amount);
+	UnreferencedParameter(amount);
 	return CContainer::GetTotalWeight();
 }
 
@@ -1479,7 +1529,7 @@ void CChar::SetID( CREID_TYPE id )
 	CCharBase * pCharDef = CCharBase::FindCharBase(id);
 	if ( pCharDef == nullptr )
 	{
-		if ( (id != -1) && (id != CREID_INVALID) )
+		if ( (id != (CREID_TYPE)-1) && (id != CREID_INVALID) )
 			DEBUG_ERR(("Create Invalid Char 0%x\n", id));
 
 		id = (CREID_TYPE)(g_Cfg.ResourceGetIndexType(RES_CHARDEF, "DEFAULTCHAR"));
@@ -1709,7 +1759,7 @@ void CChar::InitPlayer( CClient *pClient, const char *pszCharname, bool fFemale,
 				0x0BF, 0x24D, 0x24E, 0x24F, 0x353, 0x361, 0x367, 0x374, 0x375, 0x376, 0x381, 0x382, 0x383, 0x384, 0x385, 0x389,
 				0x3DE, 0x3E5, 0x3E6, 0x3E8, 0x3E9, 0x430, 0x4A7, 0x4DE, 0x51D, 0x53F, 0x579, 0x76B, 0x76C, 0x76D, 0x835, 0x903
 			};
-			constexpr uint iMax = CountOf(sm_ElfSkinHues);
+			constexpr uint iMax = ARRAY_COUNT(sm_ElfSkinHues);
 			bool isValid = 0;
 			for ( uint i = 0; i < iMax; ++i )
 			{
@@ -1793,7 +1843,7 @@ void CChar::InitPlayer( CClient *pClient, const char *pszCharname, bool fFemale,
 						0x322, 0x323, 0x324, 0x325, 0x326, 0x369, 0x386, 0x387, 0x388, 0x389, 0x38A, 0x59D,
 						0x6B8, 0x725, 0x853
 					};
-					constexpr uint iMax = CountOf(sm_ElfHairHues);
+					constexpr uint iMax = ARRAY_COUNT(sm_ElfHairHues);
 					bool isValid = 0;
 					for ( uint i = 0; i < iMax; ++i )
 					{
@@ -1815,7 +1865,7 @@ void CChar::InitPlayer( CClient *pClient, const char *pszCharname, bool fFemale,
 						0x709, 0x70B, 0x70D, 0x70F, 0x711, 0x763, 0x765, 0x768, 0x76B,
 						0x6F3, 0x6F1, 0x6EF, 0x6E4, 0x6E2, 0x6E0, 0x709, 0x70B, 0x70D
 					};
-					constexpr uint iMax = CountOf(sm_GargoyleHornHues);
+					constexpr uint iMax = ARRAY_COUNT(sm_GargoyleHornHues);
 					bool isValid = 0;
 					for ( uint i = 0; i < iMax; ++i )
 					{
@@ -1883,7 +1933,7 @@ void CChar::InitPlayer( CClient *pClient, const char *pszCharname, bool fFemale,
 						0x709, 0x70B, 0x70D, 0x70F, 0x711, 0x763, 0x765, 0x768, 0x76B,
 						0x6F3, 0x6F1, 0x6EF, 0x6E4, 0x6E2, 0x6E0, 0x709, 0x70B, 0x70D
 					};
-					int iMax = CountOf(sm_GargoyleBeardHues);
+					int iMax = ARRAY_COUNT(sm_GargoyleBeardHues);
 					bool isValid = 0;
 					for ( int i = 0; i < iMax; ++i )
 					{
@@ -2071,7 +2121,7 @@ bool CChar::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
         return true;
     }
 
-	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, CountOf(sm_szRefKeys)-1 );
+	int i = FindTableHeadSorted( ptcKey, sm_szRefKeys, ARRAY_COUNT(sm_szRefKeys)-1 );
 	if ( i >= 0 )
 	{
 		ptcKey += strlen( sm_szRefKeys[i] );
@@ -2188,7 +2238,7 @@ bool CChar::r_WriteVal( lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc, bo
     }
 
     EXC_SET_BLOCK("Keyword");
-	const CHC_TYPE iKeyNum = (CHC_TYPE) FindTableHeadSorted( ptcKey, sm_szLoadKeys, CountOf( sm_szLoadKeys )-1 );
+	const CHC_TYPE iKeyNum = (CHC_TYPE) FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 	if ( iKeyNum < 0 )
 	{
 do_default:
@@ -2258,7 +2308,8 @@ do_default:
 					else if ( !strnicmp(ptcKey, "TARGET", 6 ) )
 					{
 						ptcKey += 6;
-						if (m_Act_UID.IsValidUID())
+						//Using both m_Act_UID and m_Fight_Targ_UID will take care of both spell and fighting targets.
+						if (m_Act_UID.IsValidUID()  || m_Fight_Targ_UID.IsValidUID())
 							sVal.FormatHex((dword)(m_Fight_Targ_UID));
 						else
 							sVal.FormatVal(-1);
@@ -2299,7 +2350,7 @@ do_default:
 						}
 						else
 						{
-							attackerIndex = Exp_GetVal(ptcKey);
+							attackerIndex = std::max((int)0, Exp_GetVal(ptcKey));
 						}
 
 						SKIP_SEPARATORS(ptcKey);
@@ -2448,7 +2499,7 @@ do_default:
 				Str_CopyLimitNull(pszFameAt0, pFameAt0->GetBuffer(), uiLen);
 
 				int iFame = GetFame();
-				int i = Str_ParseCmds( pszFameAt0, ppLevel_sep, CountOf(ppLevel_sep), "," ) - 1; //range
+				int i = Str_ParseCmds( pszFameAt0, ppLevel_sep, ARRAY_COUNT(ppLevel_sep), "," ) - 1; //range
 				for (;;)
 				{
 					if ( !IsStrNumeric( ppLevel_sep[i] ) )
@@ -2477,7 +2528,7 @@ do_default:
 			SKIP_SEPARATORS(ptcKey);
 			{
 				tchar * ppArgs[2];
-				if ( !Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf(ppArgs)) )
+				if ( !Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, ARRAY_COUNT(ppArgs)) )
 					return false;
 				SKILL_TYPE iSkill = g_Cfg.FindSkillKey( ppArgs[0] );
 				if ( iSkill == SKILL_NONE )
@@ -2514,7 +2565,7 @@ do_default:
 			SKIP_SEPARATORS(ptcKey);
 			{
 				tchar * ppArgs[2];
-				if ( !Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf(ppArgs), ":,/" ) )
+				if ( !Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, ARRAY_COUNT(ppArgs), ":,/" ) )
 					return false;
 				sVal = ( pCharDef->IsFemale()) ? ppArgs[1] : ppArgs[0];
 			}
@@ -2545,7 +2596,7 @@ do_default:
 
 				short iKarma = GetKarma();
 
-				int i = Str_ParseCmds( pszKarmaAt0, ppLevel_sep, CountOf(ppLevel_sep), "," ) - 1; //range
+				int i = Str_ParseCmds( pszKarmaAt0, ppLevel_sep, ARRAY_COUNT(ppLevel_sep), "," ) - 1; //range
 				for (;;)
 				{
 					if ( ppLevel_sep[i][0] != '-' && !IsStrNumeric( ppLevel_sep[i] ) )
@@ -2589,7 +2640,7 @@ do_default:
 				GETNONWHITESPACE(ptcKey);
 
 				tchar * ppArgs[2];
-				int iQty = Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf( ppArgs ));
+				int iQty = Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, ARRAY_COUNT( ppArgs ));
 
 				// Check that we have at least the first argument
 				if ( iQty <= 0 )
@@ -2611,14 +2662,14 @@ do_default:
 				// use m_Act_UID ?
 				ptcKey += 7;
 				ITEMID_TYPE id = (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType( RES_ITEMDEF, ptcKey ));
-				sVal.FormatVal( Skill_MakeItem( id,	CUID(UID_CLEAR), SKTRIG_SELECT ) );
+				sVal.FormatVal( Skill_MakeItem( id,	CUID(UID_PLAIN_CLEAR), SKTRIG_SELECT ) );
 			}
 			return true;
 		case CHC_CANMAKESKILL:
 			{
 				ptcKey += 12;
 				ITEMID_TYPE id = (ITEMID_TYPE)(g_Cfg.ResourceGetIndexType( RES_ITEMDEF, ptcKey ));
-				sVal.FormatVal( Skill_MakeItem( id,	CUID(UID_CLEAR), SKTRIG_SELECT, true ) );
+				sVal.FormatVal( Skill_MakeItem( id,	CUID(UID_PLAIN_CLEAR), SKTRIG_SELECT, true ) );
 			}
 			return true;
 		case CHC_SKILLUSEQUICK:
@@ -2629,7 +2680,7 @@ do_default:
 				if ( *ptcKey )
 				{
 					tchar * ppArgs[4];
-					int iQty = Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, CountOf( ppArgs ));
+					int iQty = Str_ParseCmds(const_cast<tchar *>(ptcKey), ppArgs, ARRAY_COUNT( ppArgs ));
 					if ( iQty >= 2 )
 					{
 						SKILL_TYPE iSkill = g_Cfg.FindSkillKey( ppArgs[0] );
@@ -2704,8 +2755,11 @@ do_default:
 			return true;
 		case CHC_GUILDABBREV:
 			{
-				lpctstr pszAbbrev = Guild_Abbrev(MEMORY_GUILD);
-				sVal = ( pszAbbrev ) ? pszAbbrev : "";
+				lpctstr ptcAbbrev = Guild_Abbrev(MEMORY_GUILD);
+				if (ptcAbbrev)
+					sVal = ptcAbbrev;
+				else
+					sVal.Clear();
 			}
 			return true;
 		case CHC_ID:
@@ -2815,8 +2869,11 @@ do_default:
 			break;
 		case CHC_TOWNABBREV:
 			{
-				lpctstr pszAbbrev = Guild_Abbrev(MEMORY_TOWN);
-				sVal = ( pszAbbrev ) ? pszAbbrev : "";
+				lpctstr ptcAbbrev = Guild_Abbrev(MEMORY_TOWN);
+				if (ptcAbbrev)
+					sVal = ptcAbbrev;
+				else
+					sVal.Clear();
 			}
 			return true;
 		case CHC_MAXWEIGHT:
@@ -2893,11 +2950,30 @@ do_default:
 			}
 		}
 			break;
+		case CHC_ACTIONEFFECT:
+			sVal.FormatVal(m_Act_Effect);
+			break;
 		case CHC_BODY:
 			sVal = g_Cfg.ResourceGetName( CResourceID( RES_CHARDEF, GetDispID()) );
 			break;
 		case CHC_CREATE:
 			sVal.FormatLLVal( CWorldGameTime::GetCurrentTime().GetTimeDiff(_iTimeCreate) / MSECS_PER_TENTH );  // Displayed in Tenths of Second.
+			break;
+		case CHC_DAMADJUSTED:
+		{
+			ptcKey += 11;
+			CItem* pWeapon = m_uidWeapon.ItemFind();
+			if (*ptcKey == '.')
+			{
+				SKIP_SEPARATORS(ptcKey);
+				if (!strnicmp(ptcKey, "LO", 2))
+					sVal.Format("%d", Fight_CalcDamage(pWeapon, true, false));
+				else if (!strnicmp(ptcKey, "HI", 2))
+					sVal.Format("%d", Fight_CalcDamage(pWeapon, true, true));
+			}
+			else
+				sVal.Format("%d,%d", Fight_CalcDamage(pWeapon, true, false), Fight_CalcDamage(pWeapon, true, true));
+		}
 			break;
 		case CHC_DIR:
 			{
@@ -3039,6 +3115,16 @@ do_default:
         case CHC_REGENVALMANA:
             sVal.FormatUSVal( Stats_GetRegenVal(STAT_INT) );
             break;
+		case CHC_STATPERCENT:
+		{
+			ptcKey += 11;
+			SKIP_SEPARATORS(ptcKey);
+			STAT_TYPE stat = g_Cfg.GetStatKey(ptcKey);
+			if ((stat <= STAT_NONE) || (stat >= STAT_BASE_QTY))
+				return false;
+			sVal.FormatUVal(GetStatPercent(stat));
+		}
+			break;
 		case CHC_HOME:
 			sVal = m_ptHome.WriteUsed();
 			break;
@@ -3159,7 +3245,7 @@ bool CChar::r_LoadVal( CScript & s )
 
     EXC_SET_BLOCK("Keyword");
 	lpctstr	ptcKey = s.GetKey();
-	CHC_TYPE iKeyNum = (CHC_TYPE) FindTableHeadSorted( ptcKey, sm_szLoadKeys, CountOf( sm_szLoadKeys )-1 );
+	CHC_TYPE iKeyNum = (CHC_TYPE) FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 	if ( iKeyNum < 0 )
 	{
 		if ( m_pPlayer )
@@ -3332,6 +3418,11 @@ bool CChar::r_LoadVal( CScript & s )
 				g_Log.EventError("Invalid skill key: %s\n", argStr);
 			return Skill_Start(skillKey);
 		}
+		case CHC_ACTIONEFFECT:
+			m_Act_Effect = s.GetArgVal();
+			if (m_Act_Effect < 0)
+				m_Act_Effect = -1;
+			break;
 		case CHC_ATTACKER:
 		{
 			if ( strlen(ptcKey) > 8 )
@@ -3540,7 +3631,7 @@ bool CChar::r_LoadVal( CScript & s )
 				if ( s.GetArgStr() )
 				{
 					tchar * ppArgs[4];
-					int iQty = Str_ParseCmds(const_cast<tchar *>(s.GetArgStr()), ppArgs, CountOf( ppArgs ));
+					int iQty = Str_ParseCmds(const_cast<tchar *>(s.GetArgStr()), ppArgs, ARRAY_COUNT( ppArgs ));
 					if ( iQty >= 2 )
 					{
 						SKILL_TYPE iSkill = g_Cfg.FindSkillKey( ppArgs[0] );
@@ -3555,7 +3646,7 @@ bool CChar::r_LoadVal( CScript & s )
 		case CHC_MEMORY:
 			{
 				int64 piCmd[2];
-				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, CountOf(piCmd) );
+				int iArgQty = Str_ParseCmds( s.GetArgStr(), piCmd, ARRAY_COUNT(piCmd) );
 				if ( iArgQty < 2 )
 					return false;
 
@@ -3968,7 +4059,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 
 	EXC_SET_BLOCK("Verb-statement");
 
-	int index = FindTableSorted( s.GetKey(), sm_szVerbKeys, CountOf(sm_szVerbKeys)-1 );
+	int index = FindTableSorted( s.GetKey(), sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys)-1 );
 	if ( index < 0 )
     {
 		return ( (m_pNPC && NPC_OnVerb(s, pSrc)) || (m_pPlayer && Player_OnVerb(s, pSrc)) || CObjBase::r_Verb(s, pSrc) );
@@ -4020,7 +4111,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			// ANIM, ANIM_TYPE action, bool fBackward = false, byte iFrameDelay = 1
 			{
 				int64 Arg_piCmd[3];		// Maximum parameters in one line
-				int Arg_Qty = Str_ParseCmds(s.GetArgRaw(), Arg_piCmd, CountOf(Arg_piCmd));
+				int Arg_Qty = Str_ParseCmds(s.GetArgRaw(), Arg_piCmd, ARRAY_COUNT(Arg_piCmd));
 				if ( !Arg_Qty )
 					return false;
 				return UpdateAnimate((ANIM_TYPE)(Arg_piCmd[0]), true, false,
@@ -4081,6 +4172,14 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			}
 			else
 				Noto_Criminal();
+			break;
+		case CHV_CURE:
+			{
+				bool bCureHallucination = false;
+				if (s.HasArgs())
+					bCureHallucination = (bool)s.GetArgVal();
+				SetPoisonCure(bCureHallucination);
+			}
 			break;
 		case CHV_DISCONNECT:
 			// Push a player char off line. CLIENTLINGER thing
@@ -4252,7 +4351,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			GETNONWHITESPACE( psTmp );
 			tchar * ttVal[2];
 			int iTmp = 1;
-			int iArg = Str_ParseCmds( psTmp, ttVal, CountOf( ttVal ), " ,\t" );
+			int iArg = Str_ParseCmds( psTmp, ttVal, ARRAY_COUNT( ttVal ), " ,\t" );
 			if (!iArg)
 			{
 				return false;
@@ -4293,7 +4392,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
         {
             // Usage: NEWGOLD amount, pile(1: the new gold is stacked on the existing pile in the pack; 0: stacked in a new pile)
             int64 piCmd[2];
-            int iQty = Str_ParseCmds(s.GetArgRaw(), piCmd, CountOf(piCmd));
+            int iQty = Str_ParseCmds(s.GetArgRaw(), piCmd, ARRAY_COUNT(piCmd));
             if (iQty < 1)
                 return false;
 
@@ -4356,7 +4455,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			int iSkill = s.GetArgVal();
 			int iTicks = iSkill / 50;
 			int64 piCmd[2];
-			if (Str_ParseCmds(s.GetArgRaw(), piCmd, CountOf(piCmd)) > 1)
+			if (Str_ParseCmds(s.GetArgRaw(), piCmd, ARRAY_COUNT(piCmd)) > 1)
 				iTicks = (int)(piCmd[1]);
 
 			SetPoison(iSkill, iTicks, pSrc->GetChar());
@@ -4430,7 +4529,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 				if ( s.HasArgs() )
 				{
 					tchar * ppArgs[2];
-					if ( Str_ParseCmds( s.GetArgRaw(), ppArgs, CountOf( ppArgs )) > 0 )
+					if ( Str_ParseCmds( s.GetArgRaw(), ppArgs, ARRAY_COUNT( ppArgs )) > 0 )
 					{
 						SKILL_TYPE iSkill = g_Cfg.FindSkillKey( ppArgs[0] );
 						if ( iSkill == SKILL_NONE )
@@ -4461,7 +4560,7 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 				CPointMap pt = pCharSrc->GetTopPoint();
 				pt.MoveN( pCharSrc->m_dirFace, 3 );
 				pItem->MoveToDecay( pt, 10*60* MSECS_PER_SEC);	// make the cage vanish after 10 minutes.
-				pItem->Multi_Setup( nullptr, UID_CLEAR );
+				pItem->Multi_Setup( nullptr, UID_PLAIN_CLEAR );
 				Spell_Teleport( pt, true, false );
 				break;
 			}
@@ -4493,6 +4592,9 @@ bool CChar::r_Verb( CScript &s, CTextConsole * pSrc ) // Execute command from sc
 			break;
 		case CHV_UNEQUIP:	// uid
 			return ItemBounce( CUID::ItemFindFromUID(s.GetArgVal()) );
+		case CHV_WAKE:
+			Wake();
+			break;
 		case CHV_WHERE:
 			if ( pCharSrc )
 			{

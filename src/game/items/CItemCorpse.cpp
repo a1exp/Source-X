@@ -1,8 +1,8 @@
+#include "../../common/CException.h"
 #include "../../common/CLog.h"
 #include "../../common/sphereproto.h"
 #include "../chars/CChar.h"
 #include "../chars/CCharNPC.h"
-#include "../CException.h"
 #include "../CWorldGameTime.h"
 #include "../CWorldMap.h"
 #include "CItem.h"
@@ -104,7 +104,7 @@ CChar *CItemCorpse::IsCorpseSleeping() const
 
 int CItemCorpse::GetWeight(word amount) const
 {
-	UNREFERENCED_PARAMETER(amount);
+	UnreferencedParameter(amount);
 	// GetAmount is messed up.
 	// true weight == container item + contents.
 	return( 1 + CContainer::GetTotalWeight());
@@ -192,7 +192,7 @@ CItemCorpse * CChar::MakeCorpse( bool fFrontFall )
     pCorpse->m_ModMaxWeight = g_Cfg.Calc_MaxCarryWeight(this); // set corpse maxweight to prevent weird exploits like when someone place many items on an player corpse just to make this player get stuck on resurrect
 
 	if (fFrontFall)
-		pCorpse->m_itCorpse.m_facing_dir = (DIR_TYPE)(m_dirFace|0x80);
+		pCorpse->m_itCorpse.m_facing_dir = (DIR_TYPE)(m_dirFace|DIR_MASK_RUNNING);
 
 	int64 iDecayTimer = -1;	// never decay
 	if (IsStatFlag(STATF_DEAD))
@@ -262,7 +262,7 @@ bool CChar::RaiseCorpse( CItemCorpse * pCorpse )
 		pCorpse->ContentsDump( GetTopPoint() );		// drop left items on ground
 	}
 
-	UpdateAnimate((pCorpse->m_itCorpse.m_facing_dir & 0x80) ? ANIM_DIE_FORWARD : ANIM_DIE_BACK, true, true);
+	UpdateAnimate((pCorpse->m_itCorpse.m_facing_dir & DIR_MASK_RUNNING) ? ANIM_DIE_FORWARD : ANIM_DIE_BACK, true, true);
 	pCorpse->Delete();
 	return true;
 }

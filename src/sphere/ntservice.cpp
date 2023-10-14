@@ -2,7 +2,7 @@
 
 #ifdef _WIN32
 
-//#include <direct.h>
+#include <direct.h>
 #include "../common/CException.h"
 #include "../common/sphereversion.h"
 #include "../common/CLog.h"
@@ -52,7 +52,7 @@ static LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize)
 //	PURPOSE:  Allows any thread to log a message to the NT Event Log
 void CNTService::ReportEvent( WORD wType, DWORD dwEventID, LPCTSTR lpszMsg, LPCTSTR lpszArgs )
 {
-	UNREFERENCED_PARAMETER(dwEventID);
+	UnreferencedParameter(dwEventID);
 	g_Log.Event(LOGM_INIT|(( wType == EVENTLOG_INFORMATION_TYPE ) ? LOGL_EVENT : LOGL_ERROR), "%s %s\n", lpszMsg, lpszArgs);
 }
 
@@ -117,7 +117,7 @@ void CNTService::ServiceStartMain(DWORD dwArgc, LPTSTR *lpszArgv)
 {
 	TCHAR *pszMsg = Str_GetTemp();
 
-	sprintf(pszMsg, SPHERE_TITLE " " SPHERE_VERSION_PREFIX SPHERE_VERSION " - %s", g_Serv.GetName());
+	sprintf(pszMsg, SPHERE_TITLE " " SPHERE_BUILD_NAME_PREFIX SPHERE_BUILD_NAME " - %s", g_Serv.GetName());
 
 	m_hStatusHandle = RegisterServiceCtrlHandler(pszMsg, service_ctrl);
 	if ( !m_hStatusHandle )	// Not much we can do about this.
@@ -319,7 +319,7 @@ bailout1:
 	sfaFailure.dwResetPeriod = (1 * 60 * 60); // reset failure count after an hour passes with no fails
 	sfaFailure.lpRebootMsg = nullptr;	// no reboot message
 	sfaFailure.lpCommand = nullptr;	// no command executed
-	sfaFailure.cActions = CountOf(scAction);		// number of actions
+	sfaFailure.cActions = ARRAY_COUNT(scAction);		// number of actions
 	sfaFailure.lpsaActions = scAction;	//
 	if ( !ChangeServiceConfig2(schService, SERVICE_CONFIG_FAILURE_ACTIONS, &sfaFailure) )
 	{
@@ -451,15 +451,30 @@ void CNTService::CmdMainStart()
 /////////////////////////////////////////////////////////////////////////////////////
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 {
-	UNREFERENCED_PARAMETER(hPrevInstance);
+	UnreferencedParameter(hPrevInstance);
     IThread::setThreadName("T_SphereStartup");
 
 	TCHAR	*argv[32];
 	argv[0] = nullptr;
-	int argc = Str_ParseCmds(lpCmdLine, &argv[1], CountOf(argv)-1, " \t") + 1;
+	int argc = Str_ParseCmds(lpCmdLine, &argv[1], ARRAY_COUNT(argv)-1, " \t") + 1;
 
 	// We need to find out what the server name is and the log files folder... look it up in the .ini file
-    g_Cfg.LoadIni(false);
+    if (!g_Cfg.LoadIni(false))
+    {
+        // Sphere.ini couldn't be loaded. We might be running Sphere as service and have different working directory.
+        TCHAR szPath[MAX_PATH];
+        GetModuleFileName(nullptr, szPath, sizeof(szPath));
+        // Extract and change directory from this application.
+        ExtractPath(szPath);
+        if (0 == _chdir(szPath))
+        {
+            printf("Can't change current directory.\n");
+            TerminateProcess(GetCurrentProcess(), 1);
+            return 1;
+        }
+        // Try opening it again and continue as before.
+        g_Cfg.LoadIni(false);
+    }
 
     if (!g_Cfg.m_fUseNTService ||	// since there is no way to detect how did we start, use config for that
         Sphere_GetOSInfo()->dwPlatformId != VER_PLATFORM_WIN32_NT) // We are running Win9x - So we are not an NT service.

@@ -161,6 +161,9 @@ void CChar::NPC_Act_Fight()
     }
 
     // Review our targets periodically.
+    /* The code predates Sphere 56b and is used to find a new target. On the other hand, in combat, it is probably unnecessary anymore based on the details as follows;
+    * Switching the target and movement is handled by NPC_FightFindBestTarget() in the combat routines.
+    * It also break ups, some time, the NPC_ActFight trigger is all the condition were true.
     if (!IsStatFlag(STATF_PET) || (m_pNPC->m_Brain == NPCBRAIN_BERSERK))
     {
         int iObservant = (130 - Stat_GetAdjusted(STAT_INT)) / 20;
@@ -173,7 +176,7 @@ void CChar::NPC_Act_Fight()
             }
         }
     }
-
+    */
     CChar * pChar = m_Fight_Targ_UID.CharFind();
     if (pChar == nullptr || !pChar->IsTopLevel()) // target is not valid anymore ?
         return;
@@ -243,7 +246,18 @@ void CChar::NPC_Act_Fight()
         {
             m_atFlee.m_iStepsMax = 20;	// how long should it take to get there.
             m_atFlee.m_iStepsCurrent = 0;	// how long has it taken ?
-            Skill_Start(NPCACT_FLEE);	// Run away!
+            if (NPC_Act_Flee())
+            {
+                Skill_Start(NPCACT_FLEE);	// Run away!
+            }
+            else
+            {
+                //We have to clean STATF_WAR if npc motivation below zero but can't see the target or flee target is invalid.
+                Skill_Start(SKILL_NONE);
+                StatFlag_Clear(STATF_WAR);
+                Attacker_Delete(pChar, true, ATTACKER_CLEAR_DISTANCE);
+                m_Fight_Targ_UID.InitUID();
+            }
             return;
         }
     }

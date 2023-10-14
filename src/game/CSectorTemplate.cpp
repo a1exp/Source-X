@@ -117,7 +117,7 @@ void CItemsList::AddItemToSector( CItem * pItem )
 
 int CSectorBase::CObjPointSortArray::CompareKey( int id, CPointSort* pBase, bool fNoSpaces ) const
 {
-    UNREFERENCED_PARAMETER(fNoSpaces);
+    UnreferencedParameter(fNoSpaces);
     ASSERT( pBase );
     return (id - pBase->GetPointSortIndex());
 }
@@ -132,8 +132,9 @@ void CSectorBase::SetAdjacentSectors()
 
     const int iMaxX = pSectors->GetSectorCols(m_map);
     ASSERT(iMaxX > 0);
-    const int iMaxY = pSectors->GetSectorRows(m_map);
+    [[maybe_unused]] const int iMaxY = pSectors->GetSectorRows(m_map);
     ASSERT(iMaxY > 0);
+    const int iMaxSectors = pSectors->GetSectorQty(m_map);
 
     // Sectors are layed out in the array horizontally: when the row is complete (X), the subsequent sector is placed in
     //  the column below (Y).
@@ -169,15 +170,14 @@ void CSectorBase::SetAdjacentSectors()
     {
         // out of bounds checks
 		const int iAdjX = _x + _xyDir[i].x;
-        if ((iAdjX < 0) || (iAdjX >= iMaxX))
-            continue;
-
 		const int iAdjY = _y + _xyDir[i].y;
-        if ((iAdjY < 0) || (iAdjY >= iMaxY))
-            continue;
 
-		const int index = (iAdjY * iMaxX) + iAdjX;
-        ASSERT((index >= 0) && (index <= pSectors->GetSectorQty(m_map)));
+		int index = m_index;
+        index  += ((iAdjY * iMaxX) + iAdjX);
+        if (index < 0 || (index > iMaxSectors))
+        {
+            continue;
+        }
         _ppAdjacentSectors[(DIR_TYPE)i] = pSectors->GetSector(m_map, index);
     }
 }
@@ -189,12 +189,13 @@ CSector *CSectorBase::_GetAdjacentSector(DIR_TYPE dir) const
 }
 
 CSectorBase::CSectorBase() :
-    _ppAdjacentSectors{}
+    _ppAdjacentSectors{{}}
 {
 	m_map = 0;
 	m_index = 0;
 	m_dwFlags = 0;
 	_x = _y = -1;
+    //memset(_ppAdjacentSectors, 0, DIR_QTY * sizeof(_ppAdjacentSectors));
 }
 
 void CSectorBase::Init(int index, uchar map, short x, short y)

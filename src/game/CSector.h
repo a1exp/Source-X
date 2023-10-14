@@ -11,9 +11,12 @@
 #include "CSectorTemplate.h"
 #include "CTimedObject.h"
 
+#define SECTOR_TICKING_PERIOD	30 * 1000	// Every 30 seconds.
+
 
 class CChar;
 class CItemStone;
+class CItemMulti;
 
 class CSector : public CScriptObj, public CSectorBase, public CTimedObject	// square region of the world.
 {
@@ -132,7 +135,7 @@ public:
 	void RespawnDeadNPCs();
 
 	void Close();
-	lpctstr GetName() const { return "Sector"; }
+	virtual lpctstr GetName() const override { return "Sector"; }
 };
 
 

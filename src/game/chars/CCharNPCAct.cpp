@@ -112,7 +112,7 @@ bool CChar::NPC_OnVerb( CScript &s, CTextConsole * pSrc ) // Execute command fro
 	EXC_TRY("OnVerb");
 	CChar * pCharSrc = pSrc->GetChar();
 
-	switch ( FindTableSorted( s.GetKey(), CCharNPC::sm_szVerbKeys, CountOf(CCharNPC::sm_szVerbKeys)-1 ))
+	switch ( FindTableSorted( s.GetKey(), CCharNPC::sm_szVerbKeys, ARRAY_COUNT(CCharNPC::sm_szVerbKeys)-1 ))
 	{
 	case NV_BUY:
 	{
@@ -202,7 +202,7 @@ bool CChar::NPC_OnVerb( CScript &s, CTextConsole * pSrc ) // Execute command fro
 		break;
 	default:
 		// Eat all the CClient::sm_szVerbKeys and CCharPlayer::sm_szVerbKeys verbs ?
-		//if ( FindTableSorted(s.GetKey(), CClient::sm_szVerbKeys, CountOf(sm_szVerbKeys)-1) < 0 )
+		//if ( FindTableSorted(s.GetKey(), CClient::sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys)-1) < 0 )
 		return false;
 	}
 
@@ -374,7 +374,7 @@ void CChar::NPC_OnNoticeSnoop( const CChar * pCharThief, const CChar * pCharMark
 
 	if ( NPC_CanSpeak())
 	{
-		Speak( g_Cfg.GetDefaultMsg(sm_szTextSnoop[ Calc_GetRandVal( CountOf( sm_szTextSnoop )) ]));
+		Speak( g_Cfg.GetDefaultMsg(sm_szTextSnoop[ Calc_GetRandVal( ARRAY_COUNT( sm_szTextSnoop )) ]));
 	}
 	if ( ! Calc_GetRandVal(4))
 	{
@@ -663,7 +663,7 @@ bool CChar::NPC_LookAtCharGuard( CChar * pChar, bool bFromTrigger )
 			return false;
 
 		tchar *pszMsg = Str_GetTemp();
-		snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(sm_szSpeakGuardJeer[ Calc_GetRandVal( CountOf( sm_szSpeakGuardJeer )) ]), pChar->GetName());
+		snprintf(pszMsg, STR_TEMPLENGTH, g_Cfg.GetDefaultMsg(sm_szSpeakGuardJeer[ Calc_GetRandVal( ARRAY_COUNT( sm_szSpeakGuardJeer )) ]), pChar->GetName());
 		Speak(pszMsg);
 		UpdateDir(pChar);
 		return false;
@@ -692,7 +692,7 @@ bool CChar::NPC_LookAtCharGuard( CChar * pChar, bool bFromTrigger )
 	}
 	if ( !IsStatFlag(STATF_WAR) || m_Act_UID != pChar->GetUID() )
 	{
-		Speak(g_Cfg.GetDefaultMsg(sm_szSpeakGuardStrike[Calc_GetRandVal(CountOf(sm_szSpeakGuardStrike))]));
+		Speak(g_Cfg.GetDefaultMsg(sm_szSpeakGuardStrike[Calc_GetRandVal(ARRAY_COUNT(sm_szSpeakGuardStrike))]));
 		Fight_Attack(pChar, true);
 	}
 	return true;
@@ -823,14 +823,6 @@ bool CChar::NPC_LookAtCharHealer( CChar * pChar )
 	lpctstr pszRefuseMsg;
 
 	int iDist = GetDist( pChar );
-	if ( pChar->IsStatFlag( STATF_INSUBSTANTIAL ))
-	{
-		pszRefuseMsg = g_Cfg.GetDefaultMsg( DEFMSG_NPC_HEALER_MANIFEST );
-		if ( Calc_GetRandVal(5) || iDist > 3 )
-			return false;
-		Speak( pszRefuseMsg );
-		return true;
-	}
 
 	if ( iDist > 3 )
 	{
@@ -847,7 +839,7 @@ bool CChar::NPC_LookAtCharHealer( CChar * pChar )
 
 	if ( !IsStatFlag( STATF_CRIMINAL ) && NotoThem == NOTO_CRIMINAL )
 	{
-		pszRefuseMsg = sm_szHealerRefuseCriminals[ Calc_GetRandVal( CountOf( sm_szHealerRefuseCriminals )) ];
+		pszRefuseMsg = sm_szHealerRefuseCriminals[ Calc_GetRandVal( ARRAY_COUNT( sm_szHealerRefuseCriminals )) ];
 		if ( Calc_GetRandVal(5) || iDist > 3 )
 			return false;
 		Speak( pszRefuseMsg );
@@ -856,7 +848,7 @@ bool CChar::NPC_LookAtCharHealer( CChar * pChar )
 
 	if (( !ImNeutral && !ImEvil) && NotoThem >= NOTO_NEUTRAL )
 	{
-		pszRefuseMsg = sm_szHealerRefuseEvils[ Calc_GetRandVal( CountOf( sm_szHealerRefuseEvils )) ];
+		pszRefuseMsg = sm_szHealerRefuseEvils[ Calc_GetRandVal( ARRAY_COUNT( sm_szHealerRefuseEvils )) ];
 		if ( Calc_GetRandVal(5) || iDist > 3 )
 			return false;
 		Speak( pszRefuseMsg );
@@ -865,7 +857,7 @@ bool CChar::NPC_LookAtCharHealer( CChar * pChar )
 
 	if (( ImNeutral || ImEvil ) && NotoThem == NOTO_GOOD )
 	{
-		pszRefuseMsg = sm_szHealerRefuseGoods[ Calc_GetRandVal( CountOf( sm_szHealerRefuseGoods )) ];
+		pszRefuseMsg = sm_szHealerRefuseGoods[ Calc_GetRandVal( ARRAY_COUNT( sm_szHealerRefuseGoods )) ];
 		if ( Calc_GetRandVal(5) || iDist > 3 )
 			return false;
 		Speak( pszRefuseMsg );
@@ -873,7 +865,7 @@ bool CChar::NPC_LookAtCharHealer( CChar * pChar )
 	}
 
 	// Attempt to res.
-	Speak( sm_szHealer[ Calc_GetRandVal( CountOf( sm_szHealer )) ] );
+	Speak( sm_szHealer[ Calc_GetRandVal( ARRAY_COUNT( sm_szHealer )) ] );
 	UpdateAnimate( ANIM_CAST_AREA );
 	if ( ! pChar->OnSpellEffect( SPELL_Resurrection, this, 1000, nullptr ))
 	{
@@ -1424,7 +1416,7 @@ bool CChar::NPC_Act_Talk()
 				g_Cfg.GetDefaultMsg( DEFMSG_NPC_GENERIC_GONE_2 )
 			};
 			tchar *pszMsg = Str_GetTemp();
-			snprintf(pszMsg, STR_TEMPLENGTH, sm_szText[ Calc_GetRandVal(CountOf(sm_szText)) ], pChar->GetName() );
+			snprintf(pszMsg, STR_TEMPLENGTH, sm_szText[ Calc_GetRandVal(ARRAY_COUNT(sm_szText)) ], pChar->GetName() );
 			Speak(pszMsg);
 		}
 		return false;
@@ -1579,7 +1571,7 @@ void CChar::NPC_Act_Looting()
 	ItemBounce(pItem, false);
 }
 
-void CChar::NPC_Act_Flee()
+bool CChar::NPC_Act_Flee()
 {
 	ADDTOCALLSTACK("CChar::NPC_Act_Flee");
 	ASSERT(m_pNPC);
@@ -1589,13 +1581,14 @@ void CChar::NPC_Act_Flee()
 	if ( ++ m_atFlee.m_iStepsCurrent >= m_atFlee.m_iStepsMax )
 	{
 		Skill_Start( SKILL_NONE );
-		return;
+		return false;
 	}
 	if ( ! NPC_Act_Follow( true, m_atFlee.m_iStepsMax ))
 	{
 		Skill_Start( SKILL_NONE );
-		return;
+		return false;
 	}
+	return true;
 }
 
 void CChar::NPC_Act_Runto(int iDist)
@@ -1908,11 +1901,14 @@ void CChar::NPC_Act_Idle()
 
 	// ---------- If we found nothing else to do. do this. -----------
 
-	// If guards are found outside guarded territories, do the following.
-	if ( m_pNPC->m_Brain == NPCBRAIN_GUARD && !m_pArea->IsGuarded() && m_ptHome.IsValidPoint())
+	// If guards are found outside guarded territories and not allowed, do the following.
+	if (!IsSetOF(OF_GuardOutsideGuardedArea))
 	{
-		Skill_Start(NPCACT_GO_HOME);
-		return;
+		if ( m_pNPC->m_Brain == NPCBRAIN_GUARD && !m_pArea->IsGuarded() && m_ptHome.IsValidPoint())
+		{
+			Skill_Start(NPCACT_GO_HOME);
+			return;
+		}
 	}
 
 	// Specific creature random actions.

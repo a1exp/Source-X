@@ -185,13 +185,13 @@ bool CCFaction::CanSubscribe(const CItem* pItem) // static
 
 void CCFaction::Delete(bool fForced)
 {
-    UNREFERENCED_PARAMETER(fForced);
+    UnreferencedParameter(fForced);
 }
 
 bool CCFaction::r_LoadVal(CScript & s)
 {
     ADDTOCALLSTACK("CCFaction::r_LoadVal");
-    CHF_TYPE iKeyNum = (CHF_TYPE)FindTableSorted(s.GetKey(), sm_szLoadKeys, CountOf(sm_szLoadKeys) - 1);
+    CHF_TYPE iKeyNum = (CHF_TYPE)FindTableSorted(s.GetKey(), sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys) - 1);
     switch (iKeyNum)
     {
         case CHF_FACTION:
@@ -207,7 +207,7 @@ bool CCFaction::r_LoadVal(CScript & s)
 bool CCFaction::r_Load(CScript & s)
 {
     ADDTOCALLSTACK("CCFaction::r_Load");
-    UNREFERENCED_PARAMETER(s);
+    UnreferencedParameter(s);
     return true;
 }
 
@@ -219,8 +219,8 @@ CCRET_TYPE CCFaction::OnTickComponent()
 bool CCFaction::r_WriteVal(lpctstr ptcKey, CSString & s, CTextConsole * pSrc)
 {
     ADDTOCALLSTACK("CCFaction::CCFaction");
-    CHF_TYPE iKeyNum = (CHF_TYPE)FindTableSorted(ptcKey, sm_szLoadKeys, CountOf(sm_szLoadKeys) - 1);
-    UNREFERENCED_PARAMETER(pSrc);
+    CHF_TYPE iKeyNum = (CHF_TYPE)FindTableSorted(ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys) - 1);
+    UnreferencedParameter(pSrc);
     switch (iKeyNum)
     {
         case CHF_SLAYER:
@@ -245,21 +245,21 @@ void CCFaction::r_Write(CScript & s)
 {
     ADDTOCALLSTACK("CCFaction::r_Write");
     if (GetFactionID() != FACTION_NONE){
-        s.WriteKeyHex("FACTION", (llong)GetFactionID()); // Same value stored with different names for CChars and CItems.
+        s.WriteKeyHex("FACTION", GetFactionID()); // Same value stored with different names for CChars and CItems.
     }
 }
 
 bool CCFaction::r_GetRef(lpctstr & ptcKey, CScriptObj *& pRef)
 {
-    UNREFERENCED_PARAMETER(ptcKey);
-    UNREFERENCED_PARAMETER(pRef);
+    UnreferencedParameter(ptcKey);
+    UnreferencedParameter(pRef);
     return false;
 }
 
 bool CCFaction::r_Verb(CScript & s, CTextConsole * pSrc)
 {
-    UNREFERENCED_PARAMETER(s);
-    UNREFERENCED_PARAMETER(pSrc);
+    UnreferencedParameter(s);
+    UnreferencedParameter(pSrc);
     return false;
 }
 

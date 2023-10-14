@@ -7,10 +7,10 @@
 
 #include "../../common/sphere_library/CSString.h"
 #include "../../common/resource/CResourceBase.h"
+#include "../../common/CScriptTriggerArgs.h"
 #include "../uo_files/uofiles_enums_creid.h"
 #include "../items/CItemMulti.h"
 #include "../chars/CChar.h"
-#include "../CScriptTriggerArgs.h"
 #include "../triggers.h"
 #include "CCSpawn.h"
 
@@ -277,7 +277,7 @@ public:
 
     explicit CCChampionDef(CResourceID rid);
     virtual ~CCChampionDef();
-    lpctstr GetName() const { return(m_sName); }
+    virtual lpctstr GetName() const override { return(m_sName); }
     virtual bool r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc = nullptr, bool fNoCallParent = false, bool fNoCallChildren = false) override;
     virtual bool r_LoadVal(CScript& s) override;
     virtual bool r_Load(CScript& s) override;

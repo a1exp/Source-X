@@ -219,7 +219,8 @@ bool CAccounts::Account_Delete( CAccount * pAccount )
 	{
 		return false;
 	}
-
+	
+	pAccount->DeleteChars();
 	m_Accounts.RemovePtr( pAccount );
 	return true;
 }
@@ -279,6 +280,7 @@ bool CAccounts::Cmd_AddNew( CTextConsole * pSrc, lpctstr pszName, lpctstr ptcArg
 
 	pAccount = new CAccount(szName);
 	ASSERT(pAccount);
+	pSrc->SysMessagef("Account '%s' created\n", pszName);
 	pAccount->_dateConnectedFirst = pAccount->_dateConnectedLast = CSTime::GetCurrentTime();
 
 	pAccount->SetPassword(ptcArg, md5);
@@ -396,7 +398,7 @@ bool CAccounts::Account_OnCmd( tchar * pszArgs, CTextConsole * pSrc )
 		return false;
 
 	tchar * ppCmd[5];
-	size_t iQty = Str_ParseCmds( pszArgs, ppCmd, CountOf( ppCmd ));
+	size_t iQty = Str_ParseCmds( pszArgs, ppCmd, ARRAY_COUNT( ppCmd ));
 
 	VACS_TYPE index;
 	if ( iQty <= 0 ||
@@ -407,7 +409,7 @@ bool CAccounts::Account_OnCmd( tchar * pszArgs, CTextConsole * pSrc )
 	}
 	else
 	{
-		index = (VACS_TYPE) FindTableSorted( ppCmd[0], sm_szVerbKeys, CountOf( sm_szVerbKeys )-1 );
+		index = (VACS_TYPE) FindTableSorted( ppCmd[0], sm_szVerbKeys, ARRAY_COUNT( sm_szVerbKeys )-1 );
 	}
 
 	static lpctstr const sm_pszCmds[] =
@@ -436,7 +438,7 @@ bool CAccounts::Account_OnCmd( tchar * pszArgs, CTextConsole * pSrc )
 
 		case VACS_HELP:
 			{
-				for ( size_t i = 0; i < CountOf(sm_pszCmds); ++i )
+				for ( size_t i = 0; i < ARRAY_COUNT(sm_pszCmds); ++i )
 					pSrc->SysMessage( sm_pszCmds[i] );
 			}
 			return true;
@@ -512,7 +514,7 @@ bool CAccount::NameStrip( tchar * pszNameOut, lpctstr pszNameInp )
 	if ( !strnicmp(pszNameOut, "EOF", 3) || !strnicmp(pszNameOut, "ACCOUNT", 7) )
 		return false;
 	// Check for name already used.
-	if ( FindTableSorted(pszNameOut, CAccounts::sm_szVerbKeys, CountOf(CAccounts::sm_szVerbKeys)-1) >= 0 )
+	if ( FindTableSorted(pszNameOut, CAccounts::sm_szVerbKeys, ARRAY_COUNT(CAccounts::sm_szVerbKeys)-1) >= 0 )
 		return false;
 	if ( g_Cfg.IsObscene(pszNameOut) )
 		return false;
@@ -536,7 +538,7 @@ static lpctstr constexpr sm_szPrivLevels[ PLEVEL_QTY+1 ] =
 PLEVEL_TYPE CAccount::GetPrivLevelText( lpctstr pszFlags ) // static
 {
 	ADDTOCALLSTACK("CAccount::GetPrivLevelText");
-	int level = FindTable( pszFlags, sm_szPrivLevels, CountOf(sm_szPrivLevels)-1 );
+	int level = FindTable( pszFlags, sm_szPrivLevels, ARRAY_COUNT(sm_szPrivLevels)-1 );
 	if ( level >= 0 )
 		return (PLEVEL_TYPE)level;
 
@@ -593,8 +595,8 @@ void CAccount::DeleteChars()
 			CChar * pChar = m_Chars.GetChar(--i).CharFind();
 			if (pChar != nullptr)
 			{
-				pChar->Delete();
-				pChar->ClearPlayer();
+				pChar->Delete(true);
+				//pChar->ClearPlayer(); //Already include in ~CChar() when char is delete
 			}
 
 			m_Chars.DetachChar(i);
@@ -1158,7 +1160,7 @@ bool CAccount::r_GetRef( lpctstr & ptcKey, CScriptObj * & pRef )
 
 bool CAccount::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, bool fNoCallParent, bool fNoCallChildren )
 {
-    UNREFERENCED_PARAMETER(fNoCallChildren);
+    UnreferencedParameter(fNoCallChildren);
 	ADDTOCALLSTACK("CAccount::r_WriteVal");
 	EXC_TRY("WriteVal");
 	if ( !pSrc )
@@ -1166,7 +1168,7 @@ bool CAccount::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, 
 
 	bool fZero = false;
 
-	switch ( FindTableHeadSorted( ptcKey, sm_szLoadKeys, CountOf( sm_szLoadKeys )-1 ))
+	switch ( FindTableHeadSorted( ptcKey, sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 ))
 	{
 		case AC_NAME:
 		case AC_ACCOUNT:
@@ -1315,7 +1317,7 @@ bool CAccount::r_LoadVal( CScript & s )
 	ADDTOCALLSTACK("CAccount::r_LoadVal");
 	EXC_TRY("LoadVal");
 
-	int i = FindTableHeadSorted( s.GetKey(), sm_szLoadKeys, CountOf( sm_szLoadKeys )-1 );
+	int i = FindTableHeadSorted( s.GetKey(), sm_szLoadKeys, ARRAY_COUNT( sm_szLoadKeys )-1 );
 	if ( i < 0 )
 	{
 		return false;
@@ -1592,7 +1594,7 @@ bool CAccount::r_Verb( CScript &s, CTextConsole * pSrc )
 		return true;
 	}
 
-	int i = FindTableSorted( s.GetKey(), sm_szVerbKeys, CountOf( sm_szVerbKeys )-1 );
+	int i = FindTableSorted( s.GetKey(), sm_szVerbKeys, ARRAY_COUNT( sm_szVerbKeys )-1 );
 	if ( i < 0 )
 	{
 		bool fLoad = CScriptObj::r_Verb( s, pSrc );
@@ -1626,7 +1628,7 @@ bool CAccount::r_Verb( CScript &s, CTextConsole * pSrc )
 				}
 				else
 				{
-					snprintf(z, STR_TEMPLENGTH, "Cannot delete account %s.\n", sCurrentName);
+					snprintf(z, STR_TEMPLENGTH, "Account '%s' deletion blocked by script.\n", sCurrentName);
 				}
 
 				g_Log.EventStr(0, z);

@@ -397,7 +397,7 @@ size_t CChar::NPC_OnHearName( lpctstr pszText ) const
 		if ( pszName[i] == '\0' )
 		{
 			// found name.
-			while ( ISWHITESPACE( pszText[i] ))
+			while ( IsWhitespace( pszText[i] ))
 				i++;
 			return( i );	// Char name found
 		}
@@ -564,12 +564,6 @@ bool CChar::NPC_CheckWalkHere( const CPointMap & pt, const CRegion * pArea ) con
 				    return false;
             }
 		}
-
-		if ( Noto_IsCriminal() )
-		{
-			if ( !m_pArea->IsGuarded() && pArea->IsGuarded() )
-				return false;
-		}
 	}
 
 	// Is there a nasty object here that will hurt us ?
@@ -604,7 +598,7 @@ bool CChar::NPC_CheckWalkHere( const CPointMap & pt, const CRegion * pArea ) con
 CItemVendable * CChar::NPC_FindVendableItem( CItemVendable * pVendItem, CItemContainer * pContBuy, CItemContainer * pContStock ) // static
 {
 	ADDTOCALLSTACK("CChar::NPC_FindVendableItem");
-	UNREFERENCED_PARAMETER(pContStock);
+	UnreferencedParameter(pContStock);
 	// Does the NPC want to buy this item?
 	if ( !pVendItem || !pContBuy || !pVendItem->IsValidSaleItem(false) )
 		return nullptr;
@@ -876,7 +870,7 @@ int CChar::NPC_GetAttackContinueMotivation( CChar * pChar, int iMotivation ) con
 	iMotivation += ( Stat_GetAdjusted(STAT_STR) - pChar->Stat_GetAdjusted(STAT_STR));
 
 	// I'm healthy.
-	iMotivation += GetHealthPercent() - pChar->GetHealthPercent();
+	iMotivation += GetStatPercent(STAT_STR) - pChar->GetStatPercent(STAT_STR);
 
 	// I'm smart and therefore more cowardly. (if injured)
 	iMotivation -= Stat_GetAdjusted(STAT_INT) / 16;

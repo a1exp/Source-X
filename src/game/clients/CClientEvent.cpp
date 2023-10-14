@@ -1,4 +1,5 @@
 #include "../../common/resource/CResourceLock.h"
+#include "../../common/CException.h"
 #include "../../network/CClientIterator.h"
 #include "../../network/receive.h"
 #include "../../network/send.h"
@@ -7,7 +8,6 @@
 #include "../items/CItemMessage.h"
 #include "../items/CItemMulti.h"
 #include "../items/CItemVendable.h"
-#include "../CException.h"
 #include "../CSector.h"
 #include "../CServer.h"
 #include "../CWorld.h"
@@ -38,7 +38,7 @@ lpctstr const CClient::sm_szCmd_Redirect[13] =
 	"SHRINK",
 };
 
-void CClient::Event_ChatButton(const nchar * pszName) // Client's chat button was pressed
+void CClient::Event_ChatButton(const nachar* pszName) // Client's chat button was pressed
 {
 	ADDTOCALLSTACK("CClient::Event_ChatButton");
 	// See if they've made a chatname yet
@@ -82,7 +82,7 @@ void CClient::Event_ChatButton(const nchar * pszName) // Client's chat button wa
 
 			// Make it non unicode
 			tchar szChatName[ MAX_NAME_SIZE * 2 + 2 ];
-			CvtNUNICODEToSystem( szChatName, sizeof(szChatName), pszName, 128 );
+			CvtNETUTF16ToSystem( szChatName, sizeof(szChatName), pszName, 128 );
 
 			if ( ! CChat::IsValidName(szChatName, true) ||
 				g_Accounts.Account_FindChat(szChatName)) // Check for legal name, duplicates, etc
@@ -102,7 +102,7 @@ void CClient::Event_ChatButton(const nchar * pszName) // Client's chat button wa
 	this->GetChar()->SetTriggerActive();
 }
 
-void CClient::Event_ChatText( const nchar * pszText, int len, CLanguageID lang ) // Text from a client
+void CClient::Event_ChatText( const nachar* pszText, int len, CLanguageID lang ) // Text from a client
 {
 	ADDTOCALLSTACK("CClient::Event_ChatText");
 	// Just send it all to the chat system
@@ -308,6 +308,23 @@ void CClient::Event_Item_Drop( CUID uidItem, CPointMap pt, CUID uidOn, uchar gri
 
 	ClearTargMode();	// done dragging
 
+	if (pItem->IsAttr(ATTR_QUESTITEM))
+	{
+		// These items can be dropped only on player backpack or trash can
+		CItem *pPack = dynamic_cast<CItem *>(pObjOn);
+		if (pPack && pPack->IsType(IT_TRASH_CAN))
+		{
+			addSound(pItem->GetDropSound(pObjOn));
+			pItem->Delete();
+			return;
+		}
+		else if ((pPack != m_pChar->LayerFind(LAYER_PACK)) && !IsPriv(PRIV_GM))
+		{
+			SysMessageDefault(DEFMSG_ITEM_CANTDROPTRADE);
+			return Event_Item_Drop_Fail(pItem);
+		}
+	}
+
 	if ( pObjOn != nullptr )	// Put on or in another object
 	{
 		if ( ! m_pChar->CanTouch( pObjOn ))	// Must also be LOS !
@@ -374,12 +391,6 @@ void CClient::Event_Item_Drop( CUID uidItem, CPointMap pt, CUID uidOn, uchar gri
 					return;
 				}
 			}
-			else if ( ! pChar->CanCarry( pItem ))
-			{
-				SysMessage(g_Cfg.GetDefaultMsg(DEFMSG_MSG_HEAVY));
-				Event_Item_Drop_Fail( pItem );
-				return;
-			}
 		}
 
 		if (pObjTop->IsItem())
@@ -391,6 +402,23 @@ void CClient::Event_Item_Drop( CUID uidItem, CPointMap pt, CUID uidOn, uchar gri
 				return;
 			}
 		}
+        else // pObjTop may not be an item, it may be a character (eg: drop in the backpack or the bankbox)
+        {
+            if (pObjOn->IsItem() && pObjOn->IsContainer())
+            {
+                CItemContainer* pAboveContainer = static_cast<CItemContainer*>(pObjOn);
+                while (pAboveContainer) // do a recursive check.
+                {
+                    if (!pAboveContainer->CanContainerHold(pItem, m_pChar))
+                    {
+                        Event_Item_Drop_Fail(pItem);
+                        return;
+                    }
+                    CItemContainer* pNextContainer = static_cast<CItemContainer*>(static_cast<CItem*>(pObjOn)->GetTopContainer());
+                    pAboveContainer = pNextContainer == pAboveContainer ? nullptr : pNextContainer;
+                }
+            }
+        }
 
 		if ( pContItem != nullptr )
 		{
@@ -626,10 +654,10 @@ void CClient::Event_Skill_Use( SKILL_TYPE skill ) // Skill is clicked on the ski
 	if ( g_Cfg.IsSkillFlag( skill, SKF_SCRIPTED ) )
 	{
 		const CSkillDef * pSkillDef = g_Cfg.GetSkillDef(skill);
-		if (pSkillDef != nullptr && pSkillDef->m_sTargetPrompt.IsEmpty() == false)
+		if (pSkillDef != nullptr && (pSkillDef->m_sTargetPrompt.IsEmpty() == false || pSkillDef->m_sTargetPromptCliloc.IsEmpty() == false))
 		{
 			m_tmSkillTarg.m_iSkill = skill;	// targetting what skill ?
-			addTarget( CLIMODE_TARG_SKILL, pSkillDef->m_sTargetPrompt.GetBuffer(), false, fCheckCrime );
+			addTarget( CLIMODE_TARG_SKILL, pSkillDef->m_sTargetPrompt.GetBuffer(), false, fCheckCrime, 0, atoi(pSkillDef->m_sTargetPromptCliloc.GetBuffer()));
 			return;
 		}
 		else
@@ -696,16 +724,16 @@ void CClient::Event_Skill_Use( SKILL_TYPE skill ) // Skill is clicked on the ski
 
 	if ( fDoTargeting )
 	{
-		// Go into targtting mode.
+		// Go into targetting mode.
 		const CSkillDef * pSkillDef = g_Cfg.GetSkillDef(skill);
-		if (pSkillDef == nullptr || pSkillDef->m_sTargetPrompt.IsEmpty())
+		if (pSkillDef == nullptr || (pSkillDef->m_sTargetPrompt.IsEmpty() && pSkillDef->m_sTargetPromptCliloc.IsEmpty()))
 		{
 			DEBUG_ERR(( "%x: Event_Skill_Use bad skill %d\n", GetSocketID(), skill ));
 			return;
 		}
 
 		m_tmSkillTarg.m_iSkill = skill;	// targetting what skill ?
-		addTarget( CLIMODE_TARG_SKILL, pSkillDef->m_sTargetPrompt.GetBuffer(), false, fCheckCrime );
+		addTarget( CLIMODE_TARG_SKILL, pSkillDef->m_sTargetPrompt.GetBuffer(), false, fCheckCrime, 0 , atoi(pSkillDef->m_sTargetPromptCliloc.GetBuffer()));
 		return;
 	}
 }
@@ -846,7 +874,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 	if ( !m_pChar )
 		return false;
 
-	DIR_TYPE dir = DIR_TYPE(rawdir & 0x0F);
+	DIR_TYPE dir = DIR_TYPE(rawdir & 0xF);
 	if ( dir >= DIR_QTY )
 	{
 		new PacketMovementRej(this, sequence);
@@ -888,7 +916,7 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 		}
 
 		// Set running flag if I'm running
-		m_pChar->StatFlag_Mod(STATF_FLY, (rawdir & 0x80) ? true : false);
+		m_pChar->StatFlag_Mod(STATF_FLY, (rawdir & DIR_MASK_RUNNING) ? true : false);
 
 		if (IsSetEF(EF_FastWalkPrevention) && !m_pChar->IsPriv(PRIV_GM))
 		{
@@ -902,9 +930,9 @@ bool CClient::Event_Walk( byte rawdir, byte sequence ) // Player moves
 
 			int64 iDelay = 0;
 			if (m_pChar->IsStatFlag(STATF_ONHORSE | STATF_HOVERING) || (m_pChar->m_pPlayer->m_speedMode & 0x01))
-				iDelay = (rawdir & 0x80) ? 100 : 200;	// 100ms : 200ms 
+				iDelay = (rawdir & DIR_MASK_RUNNING) ? 100 : 200;	// 100ms : 200ms 
 			else
-				iDelay = (rawdir & 0x80) ? 200 : 400;	// 200ms : 400ms
+				iDelay = (rawdir & DIR_MASK_RUNNING) ? 200 : 400;	// 200ms : 400ms
 
 			iDelay -= 30; //Delay offset is set to be more permisif when player have lag or processor lack precision 
 			// This system do not work because the offset must be fine tune for each server and for EACH player and it's ping
@@ -1081,7 +1109,7 @@ bool CClient::Event_Command(lpctstr pszCommand, TALKMODE_TYPE mode)
 		m_bAllowSay = false;
 
 		// Assume you don't mean yourself !
-		if ( FindTableHeadSorted( pszCommand, sm_szCmd_Redirect, CountOf(sm_szCmd_Redirect)) >= 0 )
+		if ( FindTableHeadSorted( pszCommand, sm_szCmd_Redirect, ARRAY_COUNT(sm_szCmd_Redirect)) >= 0 )
 		{
 			// targetted verbs are logged once the target is selected.
 			addTargetVerb(pszCommand, "");
@@ -1508,6 +1536,9 @@ void CClient::Event_VendorSell(CChar* pVendor, const VendorItem* items, uint uiI
 				pContExtra->ContentAdd(pItem);
 			else
 				pItem->Delete();
+			
+			if ( IsSetOF(OF_VendorStockLimit) )
+				pItemSell->ConsumeAmount(pItem->GetAmount());
 		}
 		else
 		{
@@ -1518,6 +1549,9 @@ void CClient::Event_VendorSell(CChar* pVendor, const VendorItem* items, uint uiI
 				pContExtra->ContentAdd(pItemNew);
 			}
 			pItem->SetAmountUpdate( pItem->GetAmount() - amount );
+
+			if (IsSetOF(OF_VendorStockLimit))
+				pItemSell->ConsumeAmount(amount);
 		}
 	}
 
@@ -1551,7 +1585,7 @@ void CClient::Event_VendorSell(CChar* pVendor, const VendorItem* items, uint uiI
 void CClient::Event_Profile( byte fWriteMode, CUID uid, lpctstr pszProfile, int iProfileLen )
 {
 	ADDTOCALLSTACK("CClient::Event_Profile");
-	UNREFERENCED_PARAMETER(iProfileLen);
+	UnreferencedParameter(iProfileLen);
 	// mode = 0 = Get profile, 1 = Set profile
 	if ( m_pChar == nullptr )
 		return;
@@ -1591,7 +1625,7 @@ void CClient::Event_Profile( byte fWriteMode, CUID uid, lpctstr pszProfile, int 
 void CClient::Event_MailMsg( CUID uid1, CUID uid2 )
 {
 	ADDTOCALLSTACK("CClient::Event_MailMsg");
-	UNREFERENCED_PARAMETER(uid2);
+	UnreferencedParameter(uid2);
 	// NOTE: How do i protect this from spamming others !!!
 	// Drag the mail bag to this clients char.
 	if ( m_pChar == nullptr )
@@ -1665,11 +1699,11 @@ void CClient::Event_PromptResp( lpctstr pszText, size_t len, dword context1, dwo
 	else
 	{
 		if ( fNoStrip )	// Str_GetBare will eat unicode characters
-			len = Str_CopyLimitNull( szText, pszText, CountOf(szText) );
+			len = Str_CopyLimitNull( szText, pszText, ARRAY_COUNT(szText) );
 		else if ( promptMode == CLIMODE_PROMPT_SCRIPT_VERB )
-			len = Str_GetBare( szText, pszText, CountOf(szText), "|~=[]{|}~" );
+			len = Str_GetBare( szText, pszText, ARRAY_COUNT(szText), "|~=[]{|}~" );
 		else
-			len = Str_GetBare( szText, pszText, CountOf(szText), "|~,=[]{|}~" );
+			len = Str_GetBare( szText, pszText, ARRAY_COUNT(szText), "|~,=[]{|}~" );
 	}
 
 	lpctstr pszReName = nullptr;
@@ -1903,11 +1937,20 @@ void CClient::Event_Talk_Common(lpctstr pszText)	// PC speech
         {
             continue;
         }
-        //Skip Vendors that are too far when buying or selling
+        /*
+		Skip Vendors that are too far when buying or selling
+		No need to use this check anymore, NPCs should be able to hear up to the value of NPCDistanceHear setting in the .ini (default 4 tiles).
         if (pChar->NPC_IsVendor() && (m_pChar->CanTouch(pChar) == false) && (FindStrWord(pszText, "buy,sell") > 0))
         {
             continue;
         }
+		*/
+
+		int iDist = m_pChar->GetTopDist3D(pChar);
+
+		//Can't see or too far, Can't hear!
+		if (((!m_pChar->CanSeeLOS(pChar)) && (!fIgnoreLOS)) || (iDist > iFullDist))
+			continue;
 
 		bool bNamed = false;
 		i = 0;
@@ -1917,13 +1960,14 @@ void CClient::Event_Talk_Common(lpctstr pszText)	// PC speech
         }
 		else
 		{
-			// Named the char specifically ?
+			// Named the char specifically?
+			//If i is 0 that means we have used a KEYWORD without a name or that we did not find any NPCs with that name.
 			i = pChar->NPC_OnHearName(pszText);
-			bNamed = true;
+			bNamed = (bool)i;
 		}
 		if ( i > 0 )
 		{
-            while ( ISWHITESPACE(pszText[i]) )
+            while ( IsWhitespace(pszText[i]) )
             {
                 ++i;
             }
@@ -1942,24 +1986,20 @@ void CClient::Event_Talk_Common(lpctstr pszText)	// PC speech
 				break;
 		}
 
-        int iDist = m_pChar->GetTopDist3D(pChar);
-
-        //Can't see or too far, Can't hear!
-        if (((!m_pChar->CanSeeLOS(pChar)) && (!fIgnoreLOS)) || (iDist > iFullDist))
-            continue;
-
-        // already talking to him
-		if ( (pChar->Skill_GetActive() == NPCACT_TALK) && (pChar->m_Act_UID == m_pChar->GetUID()) )
-		{
-			pCharAlt = pChar;
-            break;
-		}
-        // Pick closest NPC?
-		else if ( iDist < iAltDist )
+		// Pick closest NPC?
+		if (iDist <= iAltDist)
 		{
 			pCharAlt = pChar;
 			iAltDist = iDist;
 		}
+        // already talking to him
+		/* No need of this check too, it creates problem when multiple NPCs are nearby.
+		else if ((pChar->Skill_GetActive() == NPCACT_TALK) && (pChar->m_Act_UID == m_pChar->GetUID()))
+		{
+			pCharAlt = pChar;
+            break;
+		}
+       */
 	}
 
 	if ( !pChar )
@@ -2068,7 +2108,7 @@ void CClient::Event_Talk( lpctstr pszText, HUE_TYPE wHue, TALKMODE_TYPE mode, bo
 }
 
 // PC speech: response to Unicode speech request
-void CClient::Event_TalkUNICODE( nword* wszText, int iTextLen, HUE_TYPE wHue, TALKMODE_TYPE mMode, FONT_TYPE font, lpctstr pszLang )
+void CClient::Event_TalkUNICODE(nachar* wszText, int iTextLen, HUE_TYPE wHue, TALKMODE_TYPE mMode, FONT_TYPE font, lpctstr pszLang )
 {
 	ADDTOCALLSTACK("CClient::Event_TalkUNICODE");
 	// Get the text in wide bytes.
@@ -2098,9 +2138,9 @@ void CClient::Event_TalkUNICODE( nword* wszText, int iTextLen, HUE_TYPE wHue, TA
 		m_pChar->m_pPlayer->m_EmoteHue = wHue;
 
 	tchar szText[MAX_TALK_BUFFER];
-	const nword * puText = wszText;
+	const nachar * puText = wszText;
 
-	int iLen = CvtNUNICODEToSystem( szText, sizeof(szText), wszText, iTextLen );
+	int iLen = CvtNETUTF16ToSystem( szText, sizeof(szText), wszText, iTextLen );
 	if ( iLen <= 0 )
 		return;
 
@@ -2139,7 +2179,7 @@ void CClient::Event_TalkUNICODE( nword* wszText, int iTextLen, HUE_TYPE wHue, TA
 					if (( szText[i] >= 'A' ) && ( szText[i] <= 'Z' ))
 						szText[i] += 0x20;
 
-				iLen = CvtSystemToNUNICODE(wszText, iTextLen, szText, (int)chars);
+				iLen = CvtSystemToNETUTF16(wszText, iTextLen, szText, (int)chars);
 			}
 		}
 
@@ -2165,7 +2205,7 @@ bool CClient::Event_SetName( CUID uid, const char * pszCharName )
 	// Do we have the right to do this ?
 	if ( (m_pChar == pChar) || !pChar->IsOwnedBy( m_pChar, true ) )
 		return false;
-	if ( FindTableSorted( pszCharName, sm_szCmd_Redirect, CountOf(sm_szCmd_Redirect) ) >= 0 )
+	if ( FindTableSorted( pszCharName, sm_szCmd_Redirect, ARRAY_COUNT(sm_szCmd_Redirect) ) >= 0 )
 		return false;
 	if ( FindTableSorted( pszCharName, CCharNPC::sm_szVerbKeys, 14 ) >= 0 )
 		return false;
@@ -2199,7 +2239,7 @@ lpctstr CDialogResponseArgs::GetName() const
 
 bool CDialogResponseArgs::r_WriteVal( lpctstr ptcKey, CSString &sVal, CTextConsole * pSrc, bool fNoCallParent, bool fNoCallChildren )
 {
-    UNREFERENCED_PARAMETER(fNoCallChildren);
+    UnreferencedParameter(fNoCallChildren);
 	ADDTOCALLSTACK("CDialogResponseArgs::r_WriteVal");
 	EXC_TRY("WriteVal");
 	if ( ! strnicmp( ptcKey, "ARGCHK", 6 ))
@@ -2376,7 +2416,8 @@ void CClient::Event_SingleClick( CUID uid )
 	if ( IsTrigUsed(TRIGGER_CLICK) || (IsTrigUsed(TRIGGER_ITEMCLICK) && pObj->IsItem()) || (IsTrigUsed(TRIGGER_CHARCLICK) && pObj->IsChar()) )
 	{
 		CScriptTriggerArgs Args(this);
-		if ( pObj->OnTrigger("@Click", m_pChar, &Args) == TRIGRET_RET_TRUE )	// CTRIG_Click, ITRIG_Click
+		// The "@Click" trigger str should be the same between items and chars...
+		if ( pObj->OnTrigger(CChar::sm_szTrigName[CTRIG_Click], m_pChar, &Args) == TRIGRET_RET_TRUE )	// CTRIG_Click, ITRIG_Click
 			return;
 	}
 
@@ -2852,7 +2893,7 @@ void CClient::Event_AOSPopupMenuSelect(dword uid, word EntryTag)	//do something 
 void CClient::Event_BugReport( const tchar * pszText, int len, BUGREPORT_TYPE type, CLanguageID lang )
 {
 	ADDTOCALLSTACK("CClient::Event_BugReport");
-	UNREFERENCED_PARAMETER(len);
+	UnreferencedParameter(len);
 	if ( !m_pChar )
 		return;
 
@@ -2931,7 +2972,7 @@ void CClient::Event_ExtCmd( EXTCMD_TYPE type, tchar *pszName )
 	tchar *ppArgs[2];
 	if (type != EXTCMD_DOOR_AUTO)
     {
-        if ((*pszName == '\0') || (0 == Str_ParseCmds(pszName, ppArgs, CountOf(ppArgs), " ")))
+        if ((*pszName == '\0') || (0 == Str_ParseCmds(pszName, ppArgs, ARRAY_COUNT(ppArgs), " ")))
         {
             g_Log.EventWarn("%0x:Event_ExtCmd received malformed data %d, '%s'\n", GetSocketID(), type, pszName);
             return;

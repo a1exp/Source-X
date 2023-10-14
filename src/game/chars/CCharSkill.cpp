@@ -1,19 +1,18 @@
-
 //  CChar is either an NPC or a Player.
 
-#include <cmath>
 #include "../../common/resource/sections/CSkillClassDef.h"
 #include "../../common/resource/sections/CRegionResourceDef.h"
 #include "../../common/resource/CResourceLock.h"
+#include "../../common/CLog.h"
 #include "../clients/CClient.h"
 #include "../items/CItemVendable.h"
 #include "../triggers.h"
-#include "../CLog.h"
 #include "../CServer.h"
 #include "../CWorldMap.h"
 #include "CChar.h"
 #include "CCharNPC.h"
 
+#include <cmath>
 
 //----------------------------------------------------------------------
 // Skills
@@ -162,7 +161,11 @@ ushort CChar::Skill_GetAdjusted( SKILL_TYPE skill ) const
 		uiAdjSkill = (ushort)IMulDiv( pSkillDef->m_StatPercent, uiPureBonus, 10000 );
 	}
 
-	return ( Skill_GetBase(skill) + uiAdjSkill );
+	tchar* z = Str_GetTemp();
+	sprintf(z, "SkillMod%d", skill);
+	ushort uiBonSkill = (ushort)GetKeyNum(z);
+
+	return ( Skill_GetBase(skill) + uiAdjSkill + uiBonSkill );
 }
 
 void CChar::Skill_AddBase( SKILL_TYPE skill, int iChange )
@@ -588,6 +591,7 @@ void CChar::Skill_Cleanup()
 	// We are starting the skill or ended dealing with it (started / succeeded / failed / aborted)
 	m_Act_Difficulty = 0;
 	m_Act_SkillCurrent = SKILL_NONE;
+	m_Act_Effect = -1;
 	_SetTimeoutD( m_pPlayer ? -1 : 1 );	// we should get a brain tick next time
 }
 
@@ -689,7 +693,7 @@ bool CChar::Skill_MakeItem_Success()
 			for ( uint n = 1; n < m_atCreate.m_dwAmount; ++n )
 			{
 				CItem *ptItem = CItem::CreateTemplate(m_atCreate.m_iItemID, nullptr, this);
-				ItemBounce(ptItem);
+				ItemBounce(ptItem, false);
 			}
 		}
 	}
@@ -911,9 +915,14 @@ bool CChar::Skill_MakeItem( ITEMID_TYPE id, CUID uidTarg, SKTRIG_TYPE stage, boo
 		size_t i = pItemDef->m_SkillMake.FindResourceType(RES_SKILL);
 		if ( i != SCONT_BADINDEX )
 		{
-			CSkillDef *pSkillDef = g_Cfg.GetSkillDef((SKILL_TYPE)(pItemDef->m_SkillMake[i].GetResIndex()));
-			if ( pSkillDef && !pSkillDef->m_vcEffect.m_aiValues.empty() )
-				iConsumePercent = pSkillDef->m_vcEffect.GetRandom();
+			if (m_Act_Effect >= 0)
+				iConsumePercent = m_Act_Effect;
+			else 
+			{
+				CSkillDef* pSkillDef = g_Cfg.GetSkillDef((SKILL_TYPE)(pItemDef->m_SkillMake[i].GetResIndex()));
+				if (pSkillDef && !pSkillDef->m_vcEffect.m_aiValues.empty())
+					iConsumePercent = pSkillDef->m_vcEffect.GetRandom();
+			}
 		}
 
 		if ( iConsumePercent < 0 )
@@ -1154,6 +1163,7 @@ bool CChar::Skill_Mining_Smelt( CItem * pItemOre, CItem * pItemTarg )
 
 	iMiningSkill = (ushort)Args.m_iN1;
 	fSkipMiningSmeltReq = (bool)Args.m_iN3;
+	std::vector<CItem*> ingots;
 	for (size_t i = 0; i < iResourceTotalQty; ++i)
 	{
 		tchar* pszTmp = Str_GetTemp();
@@ -1213,17 +1223,34 @@ bool CChar::Skill_Mining_Smelt( CItem * pItemOre, CItem * pItemTarg )
 			return false;
 		}
 		// Payoff - Amount of ingots i get.
-		CItem * pIngots = CItem::CreateScript(pBaseDef->GetID(), this );
+		ingots.emplace_back(CItem::CreateScript(pBaseDef->GetID(), this));
+		if (ingots.at(i) == nullptr)
+		{
+			SysMessageDefault(DEFMSG_MINING_NOTHING);
+			continue;
+		}
+		ingots.at(i)->SetAmount(iResourceQty);
+		/* 
+		CItem* pIngots = CItem::CreateScript(pBaseDef->GetID(), this);
 		if ( pIngots == nullptr )
 		{
 			SysMessageDefault( DEFMSG_MINING_NOTHING );
 			continue;
 		}
 		pIngots->SetAmount(iResourceQty);
-		ItemBounce( pIngots );
-	}
 
+		ItemBounce( pIngots );
+		*/
+
+		
+	}
+	//We want to consume the ore before the ingots are created.
 	pItemOre->ConsumeAmount(pItemOre->GetAmount());
+
+	//Now we finally create the resources obtained from the smelting process.
+	for (std::vector<CItem*>::iterator ingot = ingots.begin(); ingot != ingots.end(); ++ingot)
+		ItemBounce((*ingot));
+
 	return true;
 }
 
@@ -1231,7 +1258,7 @@ bool CChar::Skill_Tracking( CUID uidTarg, DIR_TYPE & dirPrv, int iDistMax )
 {
 	ADDTOCALLSTACK("CChar::Skill_Tracking");
 	// SKILL_TRACKING
-	UNREFERENCED_PARAMETER(dirPrv);
+	UnreferencedParameter(dirPrv);
 
 	if ( !IsClientActive() )		// abort action if the client get disconnected
 		return false;
@@ -1257,7 +1284,7 @@ bool CChar::Skill_Tracking( CUID uidTarg, DIR_TYPE & dirPrv, int iDistMax )
 	}
 
 	const DIR_TYPE dir = GetDir(pObjTop);
-	ASSERT(dir >= 0 && (uint)(dir) < CountOf(CPointBase::sm_szDirs));
+	ASSERT(dir >= 0 && (uint)(dir) < ARRAY_COUNT(CPointBase::sm_szDirs));
 
 	// Select tracking message based on distance
 	lpctstr pszDef;
@@ -1327,6 +1354,7 @@ int CChar::Skill_Mining( SKTRIG_TYPE stage )
 	ADDTOCALLSTACK("CChar::Skill_Mining");
 	// SKILL_MINING
 	// m_Act_p = the point we want to mine at.
+	// m_Act_UID = the worldgem bit we are mining at.
 	// m_Act_Prv_UID = Pickaxe/Shovel
 	//
 	// Test the chance of precious ore.
@@ -1401,6 +1429,7 @@ int CChar::Skill_Mining( SKTRIG_TYPE stage )
 	if ( stage == SKTRIG_START )
 	{
 		m_atResource.m_dwStrokeCount = (word)(Calc_GetRandVal(5) + 2);
+		m_Act_UID = pResBit->GetUID();
 		return Skill_NaturalResource_Setup(pResBit);	// How difficult? 1-1000
 	}
 
@@ -1647,12 +1676,14 @@ int CChar::Skill_DetectHidden( SKTRIG_TYPE stage )
 		return 0;
 
 	int iSkill = Skill_GetAdjusted(SKILL_DETECTINGHIDDEN);
-	int iRadius = iSkill / 100;
+	int iRadius = 0;
 
 	//If Effect property is defined on the Detect Hidden skill use it instead of the hardcoded radius value.
-	CSkillDef * pSkillDef = g_Cfg.GetSkillDef(SKILL_DETECTINGHIDDEN);
-	if (!pSkillDef->m_vcEffect.m_aiValues.empty())
-		iRadius = pSkillDef->m_vcEffect.GetLinear(iSkill);
+
+	if (m_Act_Effect >= 0)
+		iRadius = m_Act_Effect;
+	else
+		iRadius = iSkill / 100; //Default Sphere Detecting Hidden Radius.
 
 	CWorldSearch Area(GetTopPoint(), iRadius);
 	bool bFound = false;
@@ -2244,7 +2275,7 @@ int CChar::Skill_Taming( SKTRIG_TYPE stage )
 			return 0;
 
 		tchar * pszMsg = Str_GetTemp();
-		snprintf(pszMsg, STR_TEMPLENGTH, sm_szTameSpeak[ Calc_GetRandVal( CountOf( sm_szTameSpeak )) ], pChar->GetName());
+		snprintf(pszMsg, STR_TEMPLENGTH, sm_szTameSpeak[ Calc_GetRandVal( ARRAY_COUNT( sm_szTameSpeak )) ], pChar->GetName());
 		Speak(pszMsg);
 
 		// Keep trying and updating the animation
@@ -2553,12 +2584,11 @@ int CChar::Skill_Meditation( SKTRIG_TYPE stage )
 		}
 		++m_atTaming.m_dwStrokeCount;
 
-		//If Effect property is defined on the Meditation skill use it instead of the hardcoded  value.
-		CSkillDef * pSkillDef = g_Cfg.GetSkillDef(SKILL_MEDITATION);
-		if (!pSkillDef->m_vcEffect.m_aiValues.empty())
-			UpdateStatVal(STAT_INT, (ushort)pSkillDef->m_vcEffect.GetLinear(Skill_GetAdjusted(SKILL_MEDITATION)));
-		else
-			UpdateStatVal( STAT_INT, 1 );
+		ushort uManaValue = 1;
+		if (m_Act_Effect >= 0)
+			uManaValue =(ushort)m_Act_Effect;
+
+		UpdateStatVal(STAT_INT, uManaValue);
 		Skill_SetTimeout();		// next update (depends on skill)
 
 		// Set a new possibility for failure ?
@@ -2725,7 +2755,10 @@ int CChar::Skill_Healing( SKTRIG_TYPE stage )
 	}
 
 	// LAYER_FLAG_Bandage
-	pChar->UpdateStatVal( STAT_STR, (ushort)(pSkillDef->m_vcEffect.GetLinear(iSkillLevel)) );
+	ushort uHealValue = 1;
+	if (m_Act_Effect >= 0)
+		uHealValue = (ushort)m_Act_Effect;
+	pChar->UpdateStatVal( STAT_STR, uHealValue );
 	return 0;
 }
 
@@ -2899,8 +2932,16 @@ int CChar::Skill_Fighting( SKTRIG_TYPE stage )
 
     if ((stage == SKTRIG_FAIL) || (stage == SKTRIG_ABORT))
     {
-        m_atFight.m_iRecoilDelay = 0;
-        m_atFight.m_iSwingAnimationDelay = 0;
+		/*Super cheap fix :
+		When we are casting the SUMMON CREATURE spell while we are in an active combat (we have an active fighting skill going on)
+		resetting both the RecoilDelay and the SwingAnimationDelay will also cause the ID of the summoned creatured to be resetted.
+		This only happens when the creature to be summoned is chosen on the default "summon menu".
+		*/
+		if ( !m_atMagery.m_iSummonID ) 
+		{
+			m_atFight.m_iRecoilDelay = 0;
+			m_atFight.m_iSwingAnimationDelay = 0;
+		}
         m_atFight.m_iSwingAnimation = 0;
         m_atFight.m_iSwingIgnoreLastHitTag = 0;
         return 0;
@@ -3227,7 +3268,7 @@ int CChar::Skill_Act_Throwing( SKTRIG_TYPE stage )
 	if ( pDam )
 	{
 		int64 DVal[2];
-		size_t iQty = Str_ParseCmds( const_cast<tchar *>(pDam->GetValStr()), DVal, CountOf(DVal));
+		size_t iQty = Str_ParseCmds( const_cast<tchar *>(pDam->GetValStr()), DVal, ARRAY_COUNT(DVal));
 		switch(iQty)
 		{
 			case 1:
@@ -4194,9 +4235,22 @@ bool CChar::Skill_Start( SKILL_TYPE skill, int iDifficultyIncrease )
 		// (like ACTARG1/2 for magery, they are respectively m_atMagery.m_iSpell	and m_atMagery.m_iSummonID and are set in
 		// CClient::OnTarg_Skill_Magery, which then calls Skill_Start).
 		// Skill_Cleanup();
+        SOUND_TYPE sound = SOUND_NONE;
+        ANIM_TYPE anim = ANIM_WALK_UNARM;
+        if (!g_Cfg.IsSkillFlag(skill, SKF_NOSFX))
+        {
+			sound = Skill_GetSound(skill);
+        }
+		if (!g_Cfg.IsSkillFlag(skill, SKF_NOANIM))
+		{
+			anim = Skill_GetAnim(skill);
+        }
+		
 		CScriptTriggerArgs pArgs;
 		pArgs.m_iN1 = skill;
-
+		pArgs.m_VarsLocal.SetNumNew("Sound", sound);
+		pArgs.m_VarsLocal.SetNumNew("Anim", anim);
+		
 		// Some skill can start right away. Need no targetting.
 		// 0-100 scale of Difficulty
 		if ( IsTrigUsed(TRIGGER_SKILLPRESTART) )
@@ -4222,9 +4276,29 @@ bool CChar::Skill_Start( SKILL_TYPE skill, int iDifficultyIncrease )
 		if (m_Act_Difficulty >= 0)	// If m_Act_Difficulty == -1 then the skill stage has failed, so preserve this result for later.
 			m_Act_Difficulty += iDifficultyIncrease;
 
-		// Execute the @START trigger and pass various craft parameters there
+		const CSkillDef* pSkillDef = g_Cfg.GetSkillDef(skill);
+		int iWaitTime = 1;
+		
+		m_Act_Effect = -1;
+
 		const bool fCraftSkill = g_Cfg.IsSkillFlag(skill, SKF_CRAFT);
 		const bool fGatherSkill = g_Cfg.IsSkillFlag(skill, SKF_GATHER);
+
+		if ( IsSkillBase(skill) && pSkillDef )
+		{
+			iWaitTime = pSkillDef->m_vcDelay.GetLinear(Skill_GetBase(skill));
+			
+			if (!pSkillDef->m_vcEffect.m_aiValues.empty())
+			{
+				if (!fCraftSkill)
+					m_Act_Effect = pSkillDef->m_vcEffect.GetLinear(Skill_GetAdjusted(skill));
+				else
+					m_Act_Effect = pSkillDef->m_vcEffect.GetRandom();
+			}
+		}
+		pArgs.m_iN2 = iWaitTime;
+		// Execute the @START trigger and pass various craft parameters there
+
 		CResourceID pResBase(RES_ITEMDEF, fCraftSkill ? m_atCreate.m_iItemID : 0, 0);
 
 		if ( fCraftSkill )
@@ -4237,10 +4311,13 @@ bool CChar::Skill_Start( SKILL_TYPE skill, int iDifficultyIncrease )
 		}
 		if ( fGatherSkill )
 		{
+			CItem* pResBit = CWorldMap::CheckNaturalResource(m_Act_p, (IT_TYPE)(m_atResource.m_ridType.GetResIndex()), true, this);
+			if (pResBit)
+				m_Act_UID = pResBit->GetUID();
+
 			m_atResource.m_dwBounceItem = 1;
 			pArgs.m_VarsLocal.SetNum("GatherStrokeCnt", m_atResource.m_dwStrokeCount);
 		}
-
 
 		if ( IsTrigUsed(TRIGGER_SKILLSTART) )
 		{
@@ -4250,6 +4327,8 @@ bool CChar::Skill_Start( SKILL_TYPE skill, int iDifficultyIncrease )
 				Skill_Cleanup();
 				return false;
 			}
+            sound = (SOUND_TYPE)(pArgs.m_VarsLocal.GetKeyNum("Sound"));
+            anim = static_cast<ANIM_TYPE>(pArgs.m_VarsLocal.GetKeyNum("Anim"));
 		}
 
 		if ( IsTrigUsed(TRIGGER_START) )
@@ -4260,6 +4339,16 @@ bool CChar::Skill_Start( SKILL_TYPE skill, int iDifficultyIncrease )
 				Skill_Cleanup();
 				return false;
 			}
+            sound = (SOUND_TYPE)(pArgs.m_VarsLocal.GetKeyNum("Sound"));
+            anim = static_cast<ANIM_TYPE>(pArgs.m_VarsLocal.GetKeyNum("Anim"));
+		}
+		iWaitTime = (int)pArgs.m_iN2;
+		if (IsSkillBase(skill) && iWaitTime > 0)
+			SetTimeoutD(iWaitTime);		// How long before complete skill.
+
+		if (_IsTimerExpired())
+		{
+			_SetTimeoutD(1);		// the skill should have set it's own delay!?
 		}
 
 		if ( fCraftSkill )
@@ -4280,29 +4369,12 @@ bool CChar::Skill_Start( SKILL_TYPE skill, int iDifficultyIncrease )
 			skActive = Skill_GetActive();
 
 			if ( !g_Cfg.IsSkillFlag(skActive, SKF_NOSFX) )
-				Sound(Skill_GetSound(skActive));
+				Sound(sound);
 
 			if ( !g_Cfg.IsSkillFlag(skActive, SKF_NOANIM) )
-				UpdateAnimate(Skill_GetAnim(skActive));
+				UpdateAnimate(anim);
 		}
 
-		if ( IsSkillBase(skill) )
-		{
-			const CSkillDef *pSkillDef = g_Cfg.GetSkillDef(skill);
-			if ( pSkillDef )
-			{
-				int iWaitTime = pSkillDef->m_vcDelay.GetLinear(Skill_GetBase(skill));
-                if (iWaitTime > 0)
-                {
-                    SetTimeoutD(iWaitTime);		// How long before complete skill.
-                }
-			}
-		}
-
-        if (_IsTimerExpired())
-        {
-            _SetTimeoutD(1);		// the skill should have set it's own delay!?
-        }
 		
 		//When combat starts, the first @HitTry trigger will be called after the @SkillStart/@Start (as it was before).
 		const bool fFightSkill = g_Cfg.IsSkillFlag(skill, SKF_FIGHT);

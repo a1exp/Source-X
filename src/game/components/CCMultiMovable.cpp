@@ -94,7 +94,7 @@ bool CCMultiMovable::SetMoveDir(DIR_TYPE dir, ShipMovementType eMovementType, bo
     // TODO RowBoat's checks.
     if (fWheelMove)
         _eSpeedMode = (eMovementType == SMT_SLOW) ? SMS_SLOW : SMS_FAST;
-	
+
     SetNextMove();
     return true;
 }
@@ -140,12 +140,25 @@ uint CCMultiMovable::ListObjs(CObjBase ** ppObjList)
     uint uiCount = 0;
     ppObjList[uiCount++] = pItemThis;
 
+    // second add the components of the multi.
+    for (size_t i = 0; i < pMulti->_lComps.size(); ++i)
+    {
+        CItem *pItemComp = pMulti->_lComps[i].ItemFind();
+        if (!pItemComp)
+            continue;
+        if (!pMulti->Multi_IsPartOf(pItemComp))
+            continue;
+
+        ppObjList[uiCount++] = pItemComp;
+    }
+
+    // add chars to the list
     CWorldSearch AreaChar(pItemThis->GetTopPoint(), iMaxDist);
     AreaChar.SetAllShow(true);
     AreaChar.SetSearchSquare(true);
     while (uiCount < MAX_MULTI_LIST_OBJS)
     {
-        CChar * pChar = AreaChar.GetChar();
+        CChar *pChar = AreaChar.GetChar();
         if (pChar == nullptr)
             break;
         if (!pMulti->GetRegion()->IsInside2d(pChar->GetTopPoint()))
@@ -160,29 +173,31 @@ uint CCMultiMovable::ListObjs(CObjBase ** ppObjList)
         ppObjList[uiCount++] = pChar;
     }
 
+    // last, add the rest of the items
     CWorldSearch AreaItem(pItemThis->GetTopPoint(), iMaxDist);
     AreaItem.SetSearchSquare(true);
     while (uiCount < MAX_MULTI_LIST_OBJS)
     {
-        CItem * pItem = AreaItem.GetItem();
+        CItem *pItem = AreaItem.GetItem();
         if (pItem == nullptr)
             break;
         if (pItem == pItemThis)	// already listed.
             continue;
-        if (!pMulti->Multi_IsPartOf(pItem))
-        {
-            if (!pMulti->GetRegion()->IsInside2d(pItem->GetTopPoint()))
-                continue;
+        if (pMulti->Multi_IsPartOf(pItem)) // already listed.
+            continue;
 
-            //I guess we can allow items to be locked on the ships and still move... but disallow attr_static from moving
-            //if ( ! pItem->IsMovable() && !pItem->IsType(IT_CORPSE))
-            if (pItem->IsAttr(ATTR_STATIC))
-                continue;
+        if (!pMulti->GetRegion()->IsInside2d(pItem->GetTopPoint()))
+            continue;
 
-            int zdiff = pItem->GetTopZ() - iShipHeight;
-            if ((zdiff < -2) || (zdiff > PLAYER_HEIGHT))
-                continue;
-        }
+        //I guess we can allow items to be locked on the ships and still move... but disallow attr_static from moving
+        //if ( ! pItem->IsMovable() && !pItem->IsType(IT_CORPSE))
+        if (pItem->IsAttr(ATTR_STATIC))
+            continue;
+
+        int zdiff = pItem->GetTopZ() - iShipHeight;
+        if ((zdiff < -2) || (zdiff > PLAYER_HEIGHT))
+            continue;
+
         ppObjList[uiCount++] = pItem;
     }
     return uiCount;
@@ -309,7 +324,7 @@ bool CCMultiMovable::MoveDelta(const CPointMap& ptDelta, bool fUpdateViewFull)
 
         const CPointMap& ptMe = pCharClient->GetTopPoint();
         const int iViewDist = pCharClient->GetVisualRange();
-        
+
         // No smooth sailing: update the view for each item inside the multi
         for (uint i = 0; i < iCount; ++i)
         {
@@ -327,9 +342,9 @@ bool CCMultiMovable::MoveDelta(const CPointMap& ptDelta, bool fUpdateViewFull)
                 pClient->addObjectRemove(pObj);
                 continue; //no need to keep going. skip!
             }
-            
+
             if (pClient->CanSee(pObj))
-            {                
+            {
                 // Check if me or other clients can see a object they couldn't see before
                 if (pObj->IsItem())
                 {
@@ -488,7 +503,7 @@ bool CCMultiMovable::Face(DIR_TYPE dir)
     uint iDirection = 0;
     for (; ; ++iDirection)
     {
-        if (iDirection >= CountOf(sm_FaceDir))
+        if (iDirection >= ARRAY_COUNT(sm_FaceDir))
             return false;
         if (dir == sm_FaceDir[iDirection])
             break;
@@ -540,6 +555,7 @@ bool CCMultiMovable::Face(DIR_TYPE dir)
     // Reorient everything on the deck
     CObjBase * ppObjs[MAX_MULTI_LIST_OBJS + 1];
     size_t iCount = ListObjs(ppObjs);
+
     for (size_t i = 0; i < iCount; ++i)
     {
         CObjBase *pObj = ppObjs[i];
@@ -588,13 +604,20 @@ bool CCMultiMovable::Face(DIR_TYPE dir)
                         IT_TYPE oldType = pItem->GetType();
                         pItem->SetID(componentnew.m_id);
                         pItem->SetType(oldType);
+                        if ( oldType == IT_SHIP_PLANK && pItem->m_itShipPlank.m_wSideType == IT_SHIP_SIDE_LOCKED)
+                        {
+                            pItem->SetID((ITEMID_TYPE)pItem->Item_GetDef()->m_ttShipPlank.m_ridState.GetResIndex());
+                            pItem->SetType(IT_SHIP_PLANK);
+
+                        }
+
                         pt.m_x = pMultiThis->GetTopPoint().m_x + componentnew.m_dx;
                         pt.m_y = pMultiThis->GetTopPoint().m_y + componentnew.m_dy;
                     }
                 }
             }
 
-            if (IsTrigUsed(TRIGGER_SHIPTURN))
+            if (IsTrigUsed(TRIGGER_SHIP_TURN))
             {
                 CScriptTriggerArgs Args(dir, sm_FaceDir[iFaceOffset]);
                 pItem->OnTrigger(ITRIG_Ship_Turn, &g_Serv, &Args);
@@ -827,6 +850,12 @@ bool CCMultiMovable::Move(DIR_TYPE dir, int distance)
         return false;
     }
 
+	if (IsTrigUsed(TRIGGER_SHIP_MOVE))
+    {
+        CScriptTriggerArgs Args(dir, fStopped);
+        pItemThis->OnTrigger(ITRIG_Ship_Move, &g_Serv, &Args);
+    }
+
     return true;
 }
 
@@ -872,6 +901,13 @@ void CCMultiMovable::Stop()
     CItem *pItemThis = dynamic_cast<CItem*>(this);
     ASSERT(pItemThis);
     pItemThis->m_itShip._eMovementType = SMT_STOP;
+
+	if (IsTrigUsed(TRIGGER_SHIP_STOP))
+    {
+        CScriptTriggerArgs Args(pItemThis);
+        pItemThis->OnTrigger(ITRIG_Ship_Stop, &g_Serv, &Args);
+    }
+
     _pCaptain = nullptr;
 }
 
@@ -934,7 +970,7 @@ bool CCMultiMovable::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command
     //"One (direction*)", " (Direction*), one" Moves ship one tile in desired direction and stops.
     //"Slow (direction*)" Moves ship slowly in desired direction (see below for possible directions).
 
-    int iCmd = FindTableSorted(s.GetKey(), sm_szVerbKeys, CountOf(sm_szVerbKeys) - 1);
+    int iCmd = FindTableSorted(s.GetKey(), sm_szVerbKeys, ARRAY_COUNT(sm_szVerbKeys) - 1);
     if (iCmd < 0)
         return false;
 
@@ -986,7 +1022,8 @@ bool CCMultiMovable::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command
                 return false;
             pItemThis->m_itShip.m_DirMove = (byte)(GetDirStr(s.GetArgStr()));
             SetCaptain(pSrc);
-            return Move((DIR_TYPE)(pItemThis->m_itShip.m_DirMove), _shipSpeed.tiles);
+            Move((DIR_TYPE)(pItemThis->m_itShip.m_DirMove), _shipSpeed.tiles); //No need to return false, we just can't move the ship. The command is valid and by returning false we will get a console warning.
+            return true;
         }
 
         case CMV_SHIPGATE:
@@ -1019,7 +1056,7 @@ bool CCMultiMovable::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command
             if (!Face((DIR_TYPE)(pItemThis->m_itShip.m_DirMove)))
             {
                 pItemThis->m_itShip.m_DirMove = (uchar)(DirMove);
-                return false;
+                return true; //No need to return false, we just can't turn the ship. The command is valid and by returning false we will get a console warning.
             }
             break;
         }
@@ -1041,7 +1078,7 @@ bool CCMultiMovable::r_Verb(CScript & s, CTextConsole * pSrc) // Execute command
             if (pItemThis->m_itShip.m_fAnchored != 0)
                 goto anchored;
             if (!SetMoveDir(GetDirTurn(DirFace, DirMoveChange), SMT_NORMAL))
-                return false;
+                return false; //No need to return false, we just can't move the ship. The command is valid and by returning false we will a console warning.
             break;
         }
 
@@ -1228,6 +1265,7 @@ enum CML_TYPE
 {
     CML_ANCHOR,
     CML_DIRFACE,
+    CML_DIRMOVE,
     CML_PILOT,
     CML_SHIPSPEED,
     CML_SPEEDMODE,
@@ -1238,6 +1276,7 @@ lpctstr const CCMultiMovable::sm_szLoadKeys[CML_QTY + 1] =
 {
     "ANCHOR",
     "DIRFACE",
+    "DIRMOVE",
     "PILOT",
     "SHIPSPEED",
     "SPEEDMODE",
@@ -1248,8 +1287,8 @@ lpctstr const CCMultiMovable::sm_szLoadKeys[CML_QTY + 1] =
 bool CCMultiMovable::r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole * pSrc)
 {
     ADDTOCALLSTACK("CItemShip::r_WriteVal");
-    UNREFERENCED_PARAMETER(pSrc);
-    int index = FindTableSorted(ptcKey, sm_szLoadKeys, CountOf(sm_szLoadKeys) - 1);
+    UnreferencedParameter(pSrc);
+    int index = FindTableSorted(ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys) - 1);
     if (index == -1)
     {
         if (!strnicmp(ptcKey, "SHIPSPEED.", 10))
@@ -1264,6 +1303,9 @@ bool CCMultiMovable::r_WriteVal(lpctstr ptcKey, CSString & sVal, CTextConsole * 
             break;
         case CML_DIRFACE:
             sVal.FormatBVal(pItemThis->m_itShip.m_DirFace);
+            break;
+        case CML_DIRMOVE:
+            sVal.FormatBVal(pItemThis->m_itShip.m_DirMove);
             break;
         case CML_PILOT:
         {
@@ -1331,10 +1373,10 @@ bool CCMultiMovable::r_LoadVal(CScript & s)
 {
     ADDTOCALLSTACK("CItemShip::r_LoadVal");
     lpctstr	ptcKey = s.GetKey();
-    CML_TYPE index = (CML_TYPE)FindTableSorted(ptcKey, sm_szLoadKeys, CountOf(sm_szLoadKeys) - 1);
+    CML_TYPE index = (CML_TYPE)FindTableSorted(ptcKey, sm_szLoadKeys, ARRAY_COUNT(sm_szLoadKeys) - 1);
     // CItem *pItemThis = dynamic_cast<CItem*>(this);
     // ASSERT(pItemThis);
-    if (index == -1)
+    if (index == (CML_TYPE)-1)
     {
         if (!strnicmp(ptcKey, "SHIPSPEED.", 10))
             index = CML_SHIPSPEED;
@@ -1370,7 +1412,7 @@ bool CCMultiMovable::r_LoadVal(CScript & s)
                     return true;
                 }
                 int64 piVal[2];
-                size_t iQty = Str_ParseCmds(s.GetArgStr(), piVal, CountOf(piVal));
+                size_t iQty = Str_ParseCmds(s.GetArgStr(), piVal, ARRAY_COUNT(piVal));
                 if (iQty == 2)
                 {
                     _shipSpeed.period = (ushort)(piVal[0] * (IsSetOF(OF_NoSmoothSailing) ? MSECS_PER_TENTH : 1));
@@ -1382,13 +1424,13 @@ bool CCMultiMovable::r_LoadVal(CScript & s)
                     return false;
                 }
             }
-        } 
+        }
         break;
         case CML_PILOT:
         {
 			SetPilot(CUID::CharFindFromUID(s.GetArgVal()));
 			return true;
-        } 
+        }
         break;
         default:
         {

@@ -87,6 +87,7 @@ typedef dword DAMAGE_TYPE;		// describe a type of damage.
 #define SPELLFLAG_GOOD				0x0000200	// The spell is a good spell. u intend to help to receiver.
 #define SPELLFLAG_RESIST			0x0000400	// Allowed to resist this.	
 #define SPELLFLAG_TARG_NOSELF		0x0000800
+#define SPELLFLAG_FREEZEONCAST		0x0001000	// freezes the char on cast for this spell.
 #define SPELLFLAG_DISABLED			0x0008000
 #define SPELLFLAG_SCRIPTED			0x0010000
 #define	SPELLFLAG_PLAYERONLY		0x0020000	// casted by players only
