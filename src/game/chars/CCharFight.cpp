@@ -1331,8 +1331,9 @@ bool CChar::Fight_Attack( CChar *pCharTarg, bool fToldByMaster )
 	{
 		StatFlag_Set(STATF_WAR);
 		UpdateModeFlag();
-		if ( IsClientActive() )
-			GetClientActive()->addPlayerWarMode();
+		// commented next two lines to have old 56b behaviour per player's request
+		//if ( IsClientActive() )
+		//	GetClientActive()->addPlayerWarMode();
 	}
 
 	const SKILL_TYPE skillWeapon = Fight_GetWeaponSkill();
